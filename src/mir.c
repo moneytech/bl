@@ -6532,20 +6532,29 @@ exec_gen_type_RTTI(Context *cnt, MirType *type)
 	}
 
 	case MIR_TYPE_STRUCT: {
-		SmallArray_Member *smembers     = type->data.strct.members;
-		const size_t       memc         = members ? smembers->size : 0;
-		MirVar *           rtti_var_arr = NULL;
+		SmallArray_Member *smembers           = type->data.strct.members;
+		const size_t       memc               = members ? smembers->size : 0;
+		MirVar *           rtti_var_arr       = NULL;
+		MirVar *           rtti_var_arr_names = NULL;
 
 		MirType *rtti_var_arr_type =
 		    create_type_array(cnt, cnt->builtin_types.entry_TypeInfo_ptr, memc);
 
+		MirType *rtti_var_arr_names_type =
+		    create_type_array(cnt, cnt->builtin_types.entry_string, memc);
+
 		{ /* Members array */
 			rtti_var_arr = _create_and_alloc_RTTI_var(cnt, rtti_var_arr_type);
+			rtti_var_arr_names = _create_and_alloc_RTTI_var(cnt, rtti_var_arr_names_type);
 
 			SmallArray_ConstValue *elems =
 			    create_sarr(SmallArray_ConstValue, cnt->assembly);
 
+			SmallArray_ConstValue *elem_names =
+			    create_sarr(SmallArray_ConstValue, cnt->assembly);
+
 			rtti_var_arr->value.data.v_array.elems = elems;
+			rtti_var_arr_names->value.data.v_array.elems = elem_names;
 
 			MirMember *member;
 			sarray_foreach(smembers, member)
@@ -6557,6 +6566,8 @@ exec_gen_type_RTTI(Context *cnt, MirType *type)
 
 				set_const_ptr(&tmp->data.v_ptr, rtti_base_type, MIR_CP_VAR);
 				sa_push_ConstValue(elems, tmp);
+
+				// TODO: setup strings
 			}
 
 			_push_RTTI_var(cnt, rtti_var_arr);
@@ -6564,7 +6575,7 @@ exec_gen_type_RTTI(Context *cnt, MirType *type)
 
 		tmp = create_const_value(cnt, cnt->builtin_types.entry_TypeInfo_slice);
 
-		{ /* .args slice */
+		{ /* .members slice */
 			SmallArray_ConstValue *slice_members =
 			    create_sarr(SmallArray_ConstValue, cnt->assembly);
 			tmp->data.v_struct.members = slice_members;
