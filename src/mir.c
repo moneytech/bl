@@ -4953,6 +4953,10 @@ analyze_instr_addrof(Context *cnt, MirInstrAddrOf *addrof)
 
 	reduce_instr(cnt, addrof->src);
 
+	if (addrof->base.comptime) {
+		
+	}
+
 	return ANALYZE_RESULT(PASSED, 0);
 }
 
@@ -5963,6 +5967,7 @@ analyze_instr_type_ptr(Context *cnt, MirInstrTypePtr *type_ptr)
 		}
 	}
 
+	BL_ASSERT(type_ptr->type->value.data.v_ptr.kind == MIR_CP_TYPE);
 	MirType *src_type_value = type_ptr->type->value.data.v_ptr.data.type;
 	BL_ASSERT(src_type_value);
 

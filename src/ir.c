@@ -845,42 +845,39 @@ emit_as_const(Context *cnt, MirConstValue *value)
 		type = mir_deref_type(type);
 		BL_ASSERT(type)
 
-		if (type->kind == MIR_TYPE_FN) {
+		switch (value->data.v_ptr.kind) {
+		case MIR_CP_VAR: {
+			/* value must contains pointer to constant variable */
+			MirVar *pointed = value->data.v_ptr.data.var;
+			BL_ASSERT(pointed && pointed->llvm_value &&
+			          "Invalid const pointer to variable.")
+
+			llvm_value = pointed->llvm_value;
+			break;
+		}
+
+		case MIR_CP_FN: {
 			/* Constant pointer to the function. Value must contains pointer to MirFn
 			 * instance! */
-			MirFn *fn = value->data.v_ptr.data.any
-			                ? value->data.v_ptr.data.value->data.v_ptr.data.fn
-			                : NULL;
+			MirFn *fn = value->data.v_ptr.data.fn;
 			BL_ASSERT(fn && "Function pointer not set for compile time known constant "
 			                "pointer to function.")
 
 			llvm_value = emit_fn_proto(cnt, fn);
 			BL_ASSERT(llvm_value)
 			break;
-		} else {
-			switch (value->data.v_ptr.kind) {
-			case MIR_CP_VAR: {
-				/* value must contains pointer to constant variable */
-				MirVar *pointed = value->data.v_ptr.data.var;
-				BL_ASSERT(pointed && pointed->llvm_value &&
-				          "Invalid const pointer to variable.")
-
-				llvm_value = pointed->llvm_value;
-				break;
-			}
-
-			default: {
-				/* Only null constants are allowed here */
-				BL_ASSERT(
-				    value->data.v_ptr.data.any == NULL &&
-				    "Only pointers to fn and var can be generated as constants in "
-				    "LLVM IR.")
-				llvm_value = LLVMConstNull(llvm_type);
-			}
-			}
-
-			break;
 		}
+
+		default: {
+			/* Only null constants are allowed here */
+			BL_ASSERT(value->data.v_ptr.data.any == NULL &&
+			          "Only pointers to fn and var can be generated as constants in "
+			          "LLVM IR.")
+			llvm_value = LLVMConstNull(llvm_type);
+		}
+		}
+
+		break;
 	}
 
 	case MIR_TYPE_ARRAY: {

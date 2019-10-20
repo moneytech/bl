@@ -935,15 +935,11 @@ dyncall_push_arg(VM *vm, VMStackPtr val_ptr, MirType *type)
 
 	case MIR_TYPE_PTR: {
 		read_value(&tmp, val_ptr, type);
+
 		if (mir_deref_type(type)->kind == MIR_TYPE_FN) {
 			MirConstValue *value = (MirConstValue *)val_ptr;
-			BL_ASSERT(value->type->kind == MIR_TYPE_PTR);
-			BL_ASSERT(value->data.v_ptr.data.any);
-			BL_ASSERT(value->data.v_ptr.kind == MIR_CP_VALUE);
 
-			value = value->data.v_ptr.data.value;
-			BL_ASSERT(value->type->kind == MIR_TYPE_FN);
-			BL_ASSERT(value->data.v_ptr.data.any);
+			BL_ASSERT(value->data.v_ptr.data.fn);
 			BL_ASSERT(value->data.v_ptr.kind == MIR_CP_FN);
 
 			MirFn *fn = value->data.v_ptr.data.fn;
@@ -1366,13 +1362,11 @@ interp_instr_addrof(VM *vm, MirInstrAddrOf *addrof)
 
 	VMStackPtr ptr = fetch_value(vm, src);
 
-	ptr = ((MirConstValueData *)ptr)->v_ptr.data.stack_ptr;
-
 	if (addrof->base.comptime) {
-		// memcpy(&addrof->base.value.data, ptr, sizeof(addrof->base.value.data));
-		mir_set_const_ptr(
-		    &addrof->base.value.data.v_ptr, *(VMStackPtr **)ptr, MIR_CP_VALUE);
+		MirConstValue *val      = (MirConstValue *)ptr;
+		addrof->base.value.data = val->data;
 	} else {
+		ptr = ((MirConstValueData *)ptr)->v_ptr.data.stack_ptr;
 		push_stack(vm, (VMStackPtr)&ptr, type);
 	}
 }
@@ -1878,14 +1872,15 @@ interp_instr_decl_ref(VM *vm, MirInstrDeclRef *ref)
 		BL_ASSERT(var);
 
 		const bool use_static_segment = var->is_in_gscope;
-		VMStackPtr real_ptr           = NULL;
+
 		if (var->comptime) {
-			real_ptr = (VMStackPtr)&var->value;
+			ref->base.value.data = var->value.data;
 		} else {
-			real_ptr = read_stack_ptr(vm, var->rel_stack_ptr, use_static_segment);
+			MirConstPtr *const_ptr = &ref->base.value.data.v_ptr;
+			VMStackPtr ptr = read_stack_ptr(vm, var->rel_stack_ptr, use_static_segment);
+			mir_set_const_ptr(const_ptr, ptr, MIR_CP_STACK);
 		}
 
-		ref->base.value.data.v_ptr.data.stack_ptr = real_ptr;
 		break;
 	}
 
@@ -2144,11 +2139,16 @@ interp_instr_call(VM *vm, MirInstrCall *call)
 	read_value(&callee, callee_ptr, call->callee->value.type);
 
 	/* Function called via pointer. */
+	/* CLEANUP: !!!! */
+	/* CLEANUP: !!!! */
+	/* CLEANUP: !!!! */
+	/*
 	if (call->callee->value.type->kind == MIR_TYPE_PTR) {
-		BL_ASSERT(mir_deref_type(call->callee->value.type)->kind == MIR_TYPE_FN);
-		callee.v_ptr.data.fn =
-		    callee.v_ptr.data.any ? callee.v_ptr.data.value->data.v_ptr.data.fn : NULL;
+	        BL_ASSERT(mir_deref_type(call->callee->value.type)->kind == MIR_TYPE_FN);
+	        callee.v_ptr.data.fn =
+	            callee.v_ptr.data.any ? callee.v_ptr.data.value->data.v_ptr.data.fn : NULL;
 	}
+	 */
 
 	MirFn *fn = callee.v_ptr.data.fn;
 	if (fn == NULL) {
