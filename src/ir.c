@@ -868,6 +868,13 @@ emit_as_const(Context *cnt, MirConstValue *value)
 			break;
 		}
 
+                case MIR_CP_VALUE: {
+                        MirConstValue *val = value->data.v_ptr.data.value;
+                        llvm_value = emit_as_const(cnt, val);
+                        BL_ASSERT(llvm_value)
+                        break;
+                }
+
 		default: {
 			/* Only null constants are allowed here */
 			BL_ASSERT(value->data.v_ptr.data.any == NULL &&

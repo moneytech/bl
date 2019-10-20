@@ -1871,12 +1871,12 @@ interp_instr_decl_ref(VM *vm, MirInstrDeclRef *ref)
 		MirVar *var = entry->data.var;
 		BL_ASSERT(var);
 
-		const bool use_static_segment = var->is_in_gscope;
+		MirConstPtr *const_ptr = &ref->base.value.data.v_ptr;
 
 		if (var->comptime) {
-			ref->base.value.data = var->value.data;
+			mir_set_const_ptr(const_ptr, &var->value, MIR_CP_VALUE);
 		} else {
-			MirConstPtr *const_ptr = &ref->base.value.data.v_ptr;
+			const bool use_static_segment = var->is_in_gscope;
 			VMStackPtr ptr = read_stack_ptr(vm, var->rel_stack_ptr, use_static_segment);
 			mir_set_const_ptr(const_ptr, ptr, MIR_CP_STACK);
 		}
