@@ -4875,14 +4875,6 @@ analyze_instr_member_ptr(Context *cnt, MirInstrMemberPtr *member_ptr)
 
 	/* Sub type member. */
 	if (target_type->kind == MIR_TYPE_TYPE) {
-		/* generate load instruction if needed */
-
-		/* HACK: probably not needed?
-		if (additional_load_needed) {
-		        member_ptr->target_ptr = insert_instr_load(cnt, member_ptr->target_ptr);
-		        BL_ASSERT(member_ptr->target_ptr);
-		        }*/
-
 		if (analyze_slot(cnt, &analyze_slot_conf_basic, &member_ptr->target_ptr, NULL) !=
 		    ANALYZE_PASSED) {
 			return ANALYZE_RESULT(FAILED, 0);
@@ -4909,15 +4901,11 @@ analyze_instr_member_ptr(Context *cnt, MirInstrMemberPtr *member_ptr)
 		}
 
 		BL_ASSERT(found->kind == SCOPE_ENTRY_VARIANT);
-		MirVariant *variant = found->data.variant;
-		BL_ASSERT(variant);
-		member_ptr->base.value.data      = variant->value->data;
-		member_ptr->base.value.addr_mode = MIR_VAM_LVALUE_CONST;
 
 		member_ptr->scope_entry          = found;
 		member_ptr->base.value.type      = sub_type;
 		member_ptr->base.value.addr_mode = target_addr_mode;
-		member_ptr->base.comptime        = true;
+		member_ptr->base.comptime        = target_ptr->comptime;
 
 		return ANALYZE_RESULT(PASSED, 0);
 	}

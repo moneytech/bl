@@ -490,6 +490,8 @@ struct MirInstrMemberPtr {
 
 	Ast *            member_ident;
 	MirInstr *       target_ptr;
+
+	/* CLEANUP: do we need this? */
 	ScopeEntry *     scope_entry;
 	MirBuiltinIdKind builtin_id;
 };
