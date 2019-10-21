@@ -118,7 +118,6 @@ typedef struct {
 
 	/* Builtins */
 	struct BuiltinTypes {
-		/* PROVIDED BEGIN */
 		MirType *t_type;
 		MirType *t_s8;
 		MirType *t_s16;
@@ -133,15 +132,33 @@ typedef struct {
 		MirType *t_f32;
 		MirType *t_f64;
 		MirType *t_string;
-		/* PROVIDED END */
-
-		/* OTHER BEGIN */
 		MirType *t_void;
+
 		MirType *t_u8_ptr;
 		MirType *t_string_ptr;
 		MirType *t_string_slice;
 		MirType *t_resolve_type_fn;
 		MirType *t_test_case_fn;
+
+		/* TypeInfo cached types */
+		MirType *t_TypeKind;
+		MirType *t_TypeInfo;
+		MirType *t_TypeInfoInt;
+		MirType *t_TypeInfoReal;
+		MirType *t_TypeInfoPtr;
+		MirType *t_TypeInfoEnum;
+		MirType *t_TypeInfoEnumVariant;
+		MirType *t_TypeInfoArray;
+		MirType *t_TypeInfoStruct;
+		MirType *t_TypeInfoStructMember;
+		MirType *t_TypeInfoFn;
+		MirType *t_TypeInfoFnArg;
+		MirType *t_TypeInfoType;
+		MirType *t_TypeInfoVoid;
+		MirType *t_TypeInfoBool;
+		MirType *t_TypeInfoNull;
+		MirType *t_TypeInfoString;
+
 		MirType *t_TypeInfo_ptr;
 		MirType *t_TypeInfo_slice;
 		MirType *t_TypeInfoStructMembers_slice;
@@ -7075,13 +7092,13 @@ gen_RTTI_var(Context *cnt, MirType *type, MirConstValueData *value)
 MirConstValue *
 gen_RTTI_base(Context *cnt, s32 kind, usize size_bytes)
 {
-	MirType *struct_type = lookup_builtin(cnt, MIR_BUILTIN_ID_TYPE_INFO);
+	MirType *struct_type = cnt->builtin_types.t_TypeInfo;
 	BL_ASSERT(struct_type);
 
 	TSmallArray_ConstValuePtr *m = create_sarr(TSmallArray_ConstValuePtr, cnt->assembly);
 
 	/* .kind */
-	MirType *kind_type = lookup_builtin(cnt, MIR_BUILTIN_ID_TYPE_KIND);
+	MirType *kind_type = cnt->builtin_types.t_TypeKind;
 	BL_ASSERT(kind_type);
 
 	/* kind */
@@ -7133,7 +7150,7 @@ gen_RTTI_int(Context *cnt, MirType *type)
 	rtti_value.v_struct.members = m;
 
 	/* setup type RTTI and push */
-	return gen_RTTI_var(cnt, lookup_builtin(cnt, MIR_BUILTIN_ID_TYPE_INFO_INT), &rtti_value);
+	return gen_RTTI_var(cnt, cnt->builtin_types.t_TypeInfoInt, &rtti_value);
 }
 
 MirVar *
@@ -7155,7 +7172,7 @@ gen_RTTI_real(Context *cnt, MirType *type)
 	rtti_value.v_struct.members = m;
 
 	/* setup type RTTI and push */
-	return gen_RTTI_var(cnt, lookup_builtin(cnt, MIR_BUILTIN_ID_TYPE_INFO_REAL), &rtti_value);
+	return gen_RTTI_var(cnt, cnt->builtin_types.t_TypeInfoReal, &rtti_value);
 }
 
 MirVar *
@@ -7177,7 +7194,7 @@ gen_RTTI_ptr(Context *cnt, MirType *type)
 	rtti_value.v_struct.members = m;
 
 	/* setup type RTTI and push */
-	return gen_RTTI_var(cnt, lookup_builtin(cnt, MIR_BUILTIN_ID_TYPE_INFO_PTR), &rtti_value);
+	return gen_RTTI_var(cnt, cnt->builtin_types.t_TypeInfoPtr, &rtti_value);
 }
 
 MirConstValue *
@@ -7197,16 +7214,15 @@ gen_RTTI_enum_variant(Context *cnt, MirVariant *variant)
 	    init_or_create_const_integer(
 	        cnt, NULL, cnt->builtin_types.t_s64, variant->value->data.v_u64));
 
-	return init_or_create_const_struct(
-	    cnt, NULL, lookup_builtin(cnt, MIR_BUILTIN_ID_TYPE_INFO_ENUM_VARIANT), m);
+	return init_or_create_const_struct(cnt, NULL, cnt->builtin_types.t_TypeInfoEnumVariant, m);
 }
 
 MirConstValue *
 gen_RTTI_slice_of_enum_variants(Context *cnt, TSmallArray_VariantPtr *variants)
 {
 	/* First build-up an array variable containing pointers to TypeInfo. */
-	MirType *array_type = create_type_array(
-	    cnt, lookup_builtin(cnt, MIR_BUILTIN_ID_TYPE_INFO_ENUM_VARIANT), (s64)variants->size);
+	MirType *array_type =
+	    create_type_array(cnt, cnt->builtin_types.t_TypeInfoEnumVariant, (s64)variants->size);
 
 	MirConstValueData          array_value = {0};
 	TSmallArray_ConstValuePtr *elems = create_sarr(TSmallArray_ConstValuePtr, cnt->assembly);
@@ -7265,7 +7281,7 @@ gen_RTTI_enum(Context *cnt, MirType *type)
 	rtti_value.v_struct.members = m;
 
 	/* setup type RTTI and push */
-	return gen_RTTI_var(cnt, lookup_builtin(cnt, MIR_BUILTIN_ID_TYPE_INFO_ENUM), &rtti_value);
+	return gen_RTTI_var(cnt, cnt->builtin_types.t_TypeInfoEnum, &rtti_value);
 }
 
 MirVar *
@@ -7298,7 +7314,7 @@ gen_RTTI_array(Context *cnt, MirType *type)
 	rtti_value.v_struct.members = m;
 
 	/* setup type RTTI and push */
-	return gen_RTTI_var(cnt, lookup_builtin(cnt, MIR_BUILTIN_ID_TYPE_INFO_ARRAY), &rtti_value);
+	return gen_RTTI_var(cnt, cnt->builtin_types.t_TypeInfoArray, &rtti_value);
 }
 
 MirConstValue *
@@ -7364,8 +7380,7 @@ gen_RTTI_struct_member(Context *cnt, MirMember *member)
 	    m,
 	    init_or_create_const_integer(cnt, NULL, cnt->builtin_types.t_s32, (u64)member->index));
 
-	return init_or_create_const_struct(
-	    cnt, NULL, lookup_builtin(cnt, MIR_BUILTIN_ID_TYPE_INFO_STRUCT_MEMBER), m);
+	return init_or_create_const_struct(cnt, NULL, cnt->builtin_types.t_TypeInfoStructMember, m);
 }
 
 MirConstValue *
@@ -7384,8 +7399,7 @@ gen_RTTI_fn_arg(Context *cnt, MirArg *arg)
 	    init_or_create_const_var_ptr(
 	        cnt, NULL, cnt->builtin_types.t_TypeInfo_ptr, gen_RTTI(cnt, arg->type)));
 
-	return init_or_create_const_struct(
-	    cnt, NULL, lookup_builtin(cnt, MIR_BUILTIN_ID_TYPE_INFO_FN_ARG), m);
+	return init_or_create_const_struct(cnt, NULL, cnt->builtin_types.t_TypeInfoFnArg, m);
 }
 
 MirConstValue *
@@ -7401,8 +7415,8 @@ gen_RTTI_slice_of_fn_args(Context *cnt, TSmallArray_ArgPtr *args)
 	    m, init_or_create_const_integer(cnt, NULL, cnt->builtin_types.t_s64, argc));
 
 	if (argc) {
-		MirType *array_type = create_type_array(
-		    cnt, lookup_builtin(cnt, MIR_BUILTIN_ID_TYPE_INFO_FN_ARG), argc);
+		MirType *array_type =
+		    create_type_array(cnt, cnt->builtin_types.t_TypeInfoFnArg, argc);
 
 		MirConstValueData          array_value = {0};
 		TSmallArray_ConstValuePtr *elems =
@@ -7426,10 +7440,7 @@ gen_RTTI_slice_of_fn_args(Context *cnt, TSmallArray_ArgPtr *args)
 		tsa_push_ConstValuePtr(
 		    m,
 		    init_or_create_const_null(
-		        cnt,
-		        NULL,
-		        create_type_ptr(cnt,
-		                        lookup_builtin(cnt, MIR_BUILTIN_ID_TYPE_INFO_FN_ARG))));
+		        cnt, NULL, create_type_ptr(cnt, cnt->builtin_types.t_TypeInfoFnArg)));
 	}
 
 	return init_or_create_const_struct(cnt, NULL, cnt->builtin_types.t_TypeInfoFnArgs_slice, m);
@@ -7439,8 +7450,8 @@ MirConstValue *
 gen_RTTI_slice_of_struct_members(Context *cnt, TSmallArray_MemberPtr *members)
 {
 	/* First build-up an array variable containing pointers to TypeInfo. */
-	MirType *array_type = create_type_array(
-	    cnt, lookup_builtin(cnt, MIR_BUILTIN_ID_TYPE_INFO_STRUCT_MEMBER), (s64)members->size);
+	MirType *array_type =
+	    create_type_array(cnt, cnt->builtin_types.t_TypeInfoStructMember, (s64)members->size);
 
 	MirConstValueData          array_value = {0};
 	TSmallArray_ConstValuePtr *elems = create_sarr(TSmallArray_ConstValuePtr, cnt->assembly);
@@ -7501,7 +7512,7 @@ gen_RTTI_struct(Context *cnt, MirType *type)
 	rtti_value.v_struct.members = m;
 
 	/* setup type RTTI and push */
-	return gen_RTTI_var(cnt, lookup_builtin(cnt, MIR_BUILTIN_ID_TYPE_INFO_STRUCT), &rtti_value);
+	return gen_RTTI_var(cnt, cnt->builtin_types.t_TypeInfoStruct, &rtti_value);
 }
 
 MirVar *
@@ -7530,8 +7541,7 @@ gen_RTTI_fn(Context *cnt, MirType *type)
 	rtti_value.v_struct.members = m;
 
 	/* setup type RTTI and push */
-	MirVar *rtti_var =
-	    gen_RTTI_var(cnt, lookup_builtin(cnt, MIR_BUILTIN_ID_TYPE_INFO_FN), &rtti_value);
+	MirVar *rtti_var = gen_RTTI_var(cnt, cnt->builtin_types.t_TypeInfoFn, &rtti_value);
 
 	return rtti_var;
 }
@@ -7547,28 +7557,23 @@ gen_RTTI(Context *cnt, MirType *type)
 
 	switch (type->kind) {
 	case MIR_TYPE_TYPE:
-		rtti_var =
-		    gen_RTTI_empty(cnt, type, lookup_builtin(cnt, MIR_BUILTIN_ID_TYPE_INFO_TYPE));
+		rtti_var = gen_RTTI_empty(cnt, type, cnt->builtin_types.t_TypeInfoType);
 		break;
 
 	case MIR_TYPE_VOID:
-		rtti_var =
-		    gen_RTTI_empty(cnt, type, lookup_builtin(cnt, MIR_BUILTIN_ID_TYPE_INFO_VOID));
+		rtti_var = gen_RTTI_empty(cnt, type, cnt->builtin_types.t_TypeInfoVoid);
 		break;
 
 	case MIR_TYPE_BOOL:
-		rtti_var =
-		    gen_RTTI_empty(cnt, type, lookup_builtin(cnt, MIR_BUILTIN_ID_TYPE_INFO_BOOL));
+		rtti_var = gen_RTTI_empty(cnt, type, cnt->builtin_types.t_TypeInfoBool);
 		break;
 
 	case MIR_TYPE_NULL:
-		rtti_var =
-		    gen_RTTI_empty(cnt, type, lookup_builtin(cnt, MIR_BUILTIN_ID_TYPE_INFO_NULL));
+		rtti_var = gen_RTTI_empty(cnt, type, cnt->builtin_types.t_TypeInfoNull);
 		break;
 
 	case MIR_TYPE_STRING:
-		rtti_var =
-		    gen_RTTI_empty(cnt, type, lookup_builtin(cnt, MIR_BUILTIN_ID_TYPE_INFO_STRING));
+		rtti_var = gen_RTTI_empty(cnt, type, cnt->builtin_types.t_TypeInfoString);
 		break;
 
 	case MIR_TYPE_INT:
@@ -7619,36 +7624,55 @@ gen_RTTI(Context *cnt, MirType *type)
 void
 gen_RTTI_types(Context *cnt)
 {
+	/* include prefix t_Type and MIR_BUILTIN_ID_TYPE_ */
+	/******************************************************************************************/
+#define LOOKUP_TYPE(N, K)                                                                          \
+	{                                                                                          \
+		cnt->builtin_types.t_Type##N = lookup_builtin(cnt, MIR_BUILTIN_ID_TYPE_##K);       \
+		BL_ASSERT(cnt->builtin_types.t_Type##N && "Builtin type " #N " not found!");       \
+	}
+	/******************************************************************************************/
+
 	THashTable *table = &cnt->analyze.RTTI_entry_types;
 	if (table->size == 0) return;
 
-	{ /* Preload RTTI provided types */
-		cnt->builtin_types.t_TypeInfo_ptr =
-		    create_type_ptr(cnt, lookup_builtin(cnt, MIR_BUILTIN_ID_TYPE_INFO));
+	LOOKUP_TYPE(Kind, KIND);
+	LOOKUP_TYPE(Info, INFO);
+	LOOKUP_TYPE(InfoInt, INFO_INT);
+	LOOKUP_TYPE(InfoReal, INFO_REAL);
+	LOOKUP_TYPE(InfoPtr, INFO_PTR);
+	LOOKUP_TYPE(InfoEnum, INFO_ENUM);
+	LOOKUP_TYPE(InfoEnumVariant, INFO_ENUM_VARIANT);
+	LOOKUP_TYPE(InfoArray, INFO_ARRAY);
+	LOOKUP_TYPE(InfoStruct, INFO_STRUCT);
+	LOOKUP_TYPE(InfoStructMember, INFO_STRUCT_MEMBER);
+	LOOKUP_TYPE(InfoFn, INFO_FN);
+	LOOKUP_TYPE(InfoFnArg, INFO_FN_ARG);
+	LOOKUP_TYPE(InfoType, INFO_TYPE);
+	LOOKUP_TYPE(InfoVoid, INFO_VOID);
+	LOOKUP_TYPE(InfoBool, INFO_BOOL);
+	LOOKUP_TYPE(InfoNull, INFO_NULL);
+	LOOKUP_TYPE(InfoString, INFO_STRING);
 
-		cnt->builtin_types.t_TypeInfo_slice = create_type_struct_special(
-		    cnt, MIR_TYPE_SLICE, NULL, cnt->builtin_types.t_TypeInfo_ptr);
+	cnt->builtin_types.t_TypeInfo_ptr = create_type_ptr(cnt, cnt->builtin_types.t_TypeInfo);
 
-		cnt->builtin_types.t_TypeInfoStructMembers_slice = create_type_struct_special(
-		    cnt,
-		    MIR_TYPE_SLICE,
-		    NULL,
-		    create_type_ptr(cnt,
-		                    lookup_builtin(cnt, MIR_BUILTIN_ID_TYPE_INFO_STRUCT_MEMBER)));
+	cnt->builtin_types.t_TypeInfo_slice = create_type_struct_special(
+	    cnt, MIR_TYPE_SLICE, NULL, cnt->builtin_types.t_TypeInfo_ptr);
 
-		cnt->builtin_types.t_TypeInfoEnumVariants_slice = create_type_struct_special(
-		    cnt,
-		    MIR_TYPE_SLICE,
-		    NULL,
-		    create_type_ptr(cnt,
-		                    lookup_builtin(cnt, MIR_BUILTIN_ID_TYPE_INFO_ENUM_VARIANT)));
+	cnt->builtin_types.t_TypeInfoStructMembers_slice = create_type_struct_special(
+	    cnt,
+	    MIR_TYPE_SLICE,
+	    NULL,
+	    create_type_ptr(cnt, cnt->builtin_types.t_TypeInfoStructMember));
 
-		cnt->builtin_types.t_TypeInfoFnArgs_slice = create_type_struct_special(
-		    cnt,
-		    MIR_TYPE_SLICE,
-		    NULL,
-		    create_type_ptr(cnt, lookup_builtin(cnt, MIR_BUILTIN_ID_TYPE_INFO_FN_ARG)));
-	}
+	cnt->builtin_types.t_TypeInfoEnumVariants_slice = create_type_struct_special(
+	    cnt,
+	    MIR_TYPE_SLICE,
+	    NULL,
+	    create_type_ptr(cnt, cnt->builtin_types.t_TypeInfoEnumVariant));
+
+	cnt->builtin_types.t_TypeInfoFnArgs_slice = create_type_struct_special(
+	    cnt, MIR_TYPE_SLICE, NULL, create_type_ptr(cnt, cnt->builtin_types.t_TypeInfoFnArg));
 
 	TIterator it;
 	MirType * type;
@@ -7657,6 +7681,8 @@ gen_RTTI_types(Context *cnt)
 		type = (MirType *)thtbl_iter_peek_key(it);
 		gen_RTTI(cnt, type);
 	}
+
+#undef LOOKUP_TYPE
 }
 
 /* MIR builting */

@@ -1,15 +1,13 @@
 /* playground */
 
-FOO :: 10;
-TEXT :: "Hello!";
+T :: struct {
+    i: s32;
+    j: s32
+}
+
+BAR :: {:T: 10, 20};
+FOO :: BAR.i;
 
 main :: fn () s32 {
-    print("%\n", TEXT);
-    return 0;
+    return BAR.i;
 }
-
-foo :: fn (v: Any) {
-    tmp := ^cast(*string) v.data;
-    print("%\n", tmp);
-}
-
