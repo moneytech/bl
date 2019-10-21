@@ -4248,6 +4248,7 @@ reduce_instr(Context *cnt, MirInstr *instr)
 	case MIR_INSTR_TYPE_ENUM:
 	case MIR_INSTR_SIZEOF:
 	case MIR_INSTR_ALIGNOF:
+	case MIR_INSTR_DECL_REF:
 	case MIR_INSTR_MEMBER_PTR: {
 		erase_instr(instr);
 		break;
@@ -4277,12 +4278,6 @@ reduce_instr(Context *cnt, MirInstr *instr)
 	}
 
 	case MIR_INSTR_LOAD: {
-		vm_execute_instr(&cnt->vm, instr);
-		erase_instr(instr);
-		break;
-	}
-
-	case MIR_INSTR_DECL_REF: {
 		vm_execute_instr(&cnt->vm, instr);
 		erase_instr(instr);
 		break;
@@ -4326,6 +4321,9 @@ analyze_resolve_type(Context *cnt, MirInstr *resolver_call, MirType **out_type)
 AnalyzeResult
 analyze_instr_toany(Context *cnt, MirInstrToAny *toany)
 {
+	/* INCOMPLETE: if we need to generate comptime version of ToAny instruction,
+	 * there is issue with typeinfo which is generated after analyze pass, so ToAny cannot
+	 * be executed in reduction function. */
 	MirType *toany_type = mir_deref_type(toany->base.value.type);
 	BL_ASSERT(toany->expr && "Missing expression as toany input.");
 
@@ -4954,7 +4952,6 @@ analyze_instr_addrof(Context *cnt, MirInstrAddrOf *addrof)
 	reduce_instr(cnt, addrof->src);
 
 	if (addrof->base.comptime) {
-		
 	}
 
 	return ANALYZE_RESULT(PASSED, 0);
@@ -5967,7 +5964,7 @@ analyze_instr_type_ptr(Context *cnt, MirInstrTypePtr *type_ptr)
 		}
 	}
 
-	//BL_ASSERT(type_ptr->type->value.data.v_ptr.kind == MIR_CP_TYPE);
+	// BL_ASSERT(type_ptr->type->value.data.v_ptr.kind == MIR_CP_TYPE);
 	MirType *src_type_value = type_ptr->type->value.data.v_ptr.data.type;
 	BL_ASSERT(src_type_value);
 

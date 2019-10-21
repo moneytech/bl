@@ -1,10 +1,15 @@
 /* playground */
 
 FOO :: 10;
+TEXT :: "Hello!";
 
 main :: fn () s32 {
-    p := &FOO;
-    i := ^p;
+    print("%\n", TEXT);
     return 0;
+}
+
+foo :: fn (v: Any) {
+    tmp := ^cast(*string) v.data;
+    print("%\n", tmp);
 }
 

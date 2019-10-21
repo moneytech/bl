@@ -142,13 +142,13 @@ typedef enum MirTypeKind {
 } MirTypeKind;
 
 typedef enum MirConstPtrKind {
-	MIR_CP_UNKNOWN,
-	MIR_CP_TYPE,
-	MIR_CP_VALUE,
-	MIR_CP_FN,
-	MIR_CP_VAR,
-	MIR_CP_STR,
-	MIR_CP_STACK
+	MIR_CP_UNKNOWN = 0,
+	MIR_CP_TYPE    = 1 << 0, // 1
+	MIR_CP_VALUE   = 1 << 1, // 2
+	MIR_CP_FN      = 1 << 2, // 4
+	MIR_CP_VAR     = 1 << 3, // 8
+	MIR_CP_STR     = 1 << 4, // 16
+	MIR_CP_STACK   = 1 << 5, // 32
 } MirConstPtrKind;
 
 typedef enum MirValueAddressMode {
@@ -775,6 +775,15 @@ mir_set_const_ptr(MirConstPtr *value, void *ptr, MirConstPtrKind kind)
 {
 	value->data.any = ptr;
 	value->kind     = kind;
+}
+
+#define mir_get_const_ptr(T, _value, _valid_kind) ((T)_mir_get_const_ptr((_value), (_valid_kind)))
+
+static inline void *
+_mir_get_const_ptr(MirConstPtr *value, u32 valid_kind)
+{
+	BL_ASSERT(value->kind & valid_kind && "Unexpected const pointer type!");
+	return value->data.any;
 }
 
 ptrdiff_t

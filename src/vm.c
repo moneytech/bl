@@ -599,8 +599,13 @@ copy_comptime_to_stack(VM *vm, VMStackPtr dest_ptr, MirConstValue *src_value)
 			MirVar *var = const_ptr->data.var;
 			BL_ASSERT(var);
 
-			VMStackPtr var_ptr =
-			    read_stack_ptr(vm, var->rel_stack_ptr, var->is_in_gscope);
+			VMStackPtr var_ptr = NULL;
+			if (var->comptime) {
+				var_ptr = (VMStackPtr)&var->value;
+			} else {
+				var_ptr = read_stack_ptr(vm, var->rel_stack_ptr, var->is_in_gscope);
+			}
+
 			memcpy(dest_ptr, &var_ptr, src_type->store_size_bytes);
 			break;
 		}
@@ -1248,10 +1253,13 @@ interp_instr(VM *vm, MirInstr *instr)
 void
 interp_instr_toany(VM *vm, MirInstrToAny *toany)
 {
-	MirVar *   tmp      = toany->tmp;
-	MirVar *   expr_tmp = toany->expr_tmp;
-	VMStackPtr tmp_ptr  = read_stack_ptr(vm, tmp->rel_stack_ptr, tmp->is_in_gscope);
-	MirType *  tmp_type = tmp->value.type;
+	MirVar * tmp      = toany->tmp;
+	MirVar * expr_tmp = toany->expr_tmp;
+	MirType *tmp_type = tmp->value.type;
+
+	VMStackPtr tmp_ptr = read_stack_ptr(vm, tmp->rel_stack_ptr, tmp->is_in_gscope);
+
+	BL_ASSERT(tmp_ptr);
 
 	/* type_info */
 	MirVar *expr_type_rtti = toany->rtti_type->vm_rtti_var_cache;
@@ -1868,6 +1876,8 @@ interp_instr_decl_ref(VM *vm, MirInstrDeclRef *ref)
 
 	switch (entry->kind) {
 	case SCOPE_ENTRY_VAR: {
+		/* CLEANUP: why we don't use decl ref in same way as other instructions??? Could we
+		 * push pointer to found scope entry on the stack for non-comptime references??? */
 		MirVar *var = entry->data.var;
 		BL_ASSERT(var);
 
@@ -2091,7 +2101,6 @@ interp_instr_load(VM *vm, MirInstrLoad *load)
 	BL_ASSERT(mir_is_pointer_type(load->src->value.type));
 
 	VMStackPtr src_ptr = fetch_value(vm, load->src);
-	src_ptr            = ((MirConstValueData *)src_ptr)->v_ptr.data.stack_ptr;
 
 	if (!src_ptr) {
 		msg_error("Dereferencing null pointer!");
@@ -2099,8 +2108,13 @@ interp_instr_load(VM *vm, MirInstrLoad *load)
 	}
 
 	if (load->base.comptime) {
-		memcpy(&load->base.value.data, src_ptr, sizeof(load->base.value.data));
+		MirConstValue *src_value = (MirConstValue *)src_ptr;
+		src_value                = mir_get_const_ptr(
+                    MirConstValue *, &src_value->data.v_ptr, MIR_CP_VALUE | MIR_CP_VAR);
+
+		load->base.value.data = src_value->data;
 	} else {
+		src_ptr = ((MirConstValueData *)src_ptr)->v_ptr.data.stack_ptr;
 		push_stack(vm, src_ptr, dest_type);
 	}
 }
