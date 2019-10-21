@@ -4253,6 +4253,9 @@ reduce_instr(Context *cnt, MirInstr *instr)
 	if (!instr->comptime && instr->kind != MIR_INSTR_COMPOUND) return;
 
 	switch (instr->kind) {
+		/* CLEANUP: These instructions does not need to be executed in VM because their
+		 * values are known during analyze pass, but It's still good idea to set the actual
+		 * const expression values in VM to keep things in one place. */
 	case MIR_INSTR_CONST:
 	case MIR_INSTR_DECL_MEMBER:
 	case MIR_INSTR_DECL_VARIANT:

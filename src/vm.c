@@ -1507,9 +1507,6 @@ interp_instr_member_ptr(VM *vm, MirInstrMemberPtr *member_ptr)
 	case MIR_TYPE_TYPE: {
 		/* This is valid only for enum types. We try to get one of enum's valiants. Variants
 		 * are parts of the enum type passed here as the actual value of target_ptr. */
-		MirConstValue *ptr_val = (MirConstValue *)ptr;
-
-		BL_ASSERT(ptr_val->type->kind == MIR_TYPE_ENUM);
 		BL_ASSERT(comptime);
 		BL_ASSERT(member_ptr->scope_entry &&
 		          member_ptr->scope_entry->kind == SCOPE_ENTRY_VARIANT);
@@ -1522,6 +1519,9 @@ interp_instr_member_ptr(VM *vm, MirInstrMemberPtr *member_ptr)
 		break;
 	}
 
+	case MIR_TYPE_VARGS:
+	case MIR_TYPE_STRING:
+	case MIR_TYPE_SLICE:
 	case MIR_TYPE_STRUCT: {
 		BL_ASSERT(member_ptr->scope_entry &&
 		          member_ptr->scope_entry->kind == SCOPE_ENTRY_MEMBER);
@@ -1551,18 +1551,21 @@ interp_instr_member_ptr(VM *vm, MirInstrMemberPtr *member_ptr)
 	}
 
 	case MIR_TYPE_ARRAY: {
+		/* INCOMPLETE: This works only for runtime!!! */
+		/* INCOMPLETE: This works only for runtime!!! */
+		/* INCOMPLETE: This works only for runtime!!! */
 		BL_ASSERT(!comptime && "Builtin on comptime is not implemented yet!");
 
 		VMStackPtr result = NULL;
 
 		/* builtin member */
 		if (member_ptr->builtin_id == MIR_BUILTIN_ID_ARR_PTR) {
-			/* slice .ptr */
+			/* array .ptr */
 			const ptrdiff_t ptr_offset =
 			    mir_get_struct_elem_offest(vm->assembly, target_type, 1);
 			result = ptr + ptr_offset; // pointer shift
 		} else if (member_ptr->builtin_id == MIR_BUILTIN_ID_ARR_LEN) {
-			/* slice .len*/
+			/* array .len*/
 			const ptrdiff_t len_offset =
 			    mir_get_struct_elem_offest(vm->assembly, target_type, 0);
 			result = ptr + len_offset; // pointer shift
@@ -1610,6 +1613,9 @@ interp_instr_switch(VM *vm, MirInstrSwitch *sw)
 
 	vm->stack->prev_block = sw->base.owner_block;
 
+	/* PERFORMANCE: We can speed this up little bit by ordering cases by value. */
+	/* PERFORMANCE: We can speed this up little bit by ordering cases by value. */
+	/* PERFORMANCE: We can speed this up little bit by ordering cases by value. */
 	TSmallArray_SwitchCase *cases = sw->cases;
 	for (usize i = 0; i < cases->size; ++i) {
 		MirSwitchCase *c = &cases->data[i];
