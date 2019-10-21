@@ -1493,14 +1493,12 @@ void
 interp_instr_member_ptr(VM *vm, MirInstrMemberPtr *member_ptr)
 {
 	BL_ASSERT(member_ptr->target_ptr);
-	MirType *         target_type = member_ptr->target_ptr->value.type;
-	MirConstValueData result      = {0};
+	MirType *  target_type = member_ptr->target_ptr->value.type;
+	VMStackPtr result      = NULL;
+	const bool comptime    = member_ptr->base.comptime;
 
-	/* lookup for base structure declaration type
-	 * IDEA: maybe we can store parent type to the member type? But what about
-	 * builtin types???
-	 */
-	BL_ASSERT(target_type->kind == MIR_TYPE_PTR && "expected pointer");
+	/* Valid for pointers and enum types!!! */
+	BL_ASSERT(target_type->kind == MIR_TYPE_PTR && "Expected pointer or enum!");
 	target_type = mir_deref_type(target_type);
 	BL_ASSERT(mir_is_composit_type(target_type) && "expected structure");
 
@@ -1512,34 +1510,46 @@ interp_instr_member_ptr(VM *vm, MirInstrMemberPtr *member_ptr)
 	if (member_ptr->builtin_id == MIR_BUILTIN_ID_NONE) {
 		BL_ASSERT(member_ptr->scope_entry &&
 		          member_ptr->scope_entry->kind == SCOPE_ENTRY_MEMBER);
+
 		MirMember *member = member_ptr->scope_entry->data.member;
 		BL_ASSERT(member);
+
 		const s64 index = member->index;
 
-		/* let the llvm solve poiner offest */
-		const ptrdiff_t ptr_offset =
-		    mir_get_struct_elem_offest(vm->assembly, target_type, (u32)index);
+		if (comptime) {
+			MirConstValue *ptr_val = (MirConstValue *)ptr;
+			result = (VMStackPtr)ptr_val->data.v_struct.members->data[index];
+		} else {
+			/* let the llvm solve poiner offest */
+			const ptrdiff_t ptr_offset =
+			    mir_get_struct_elem_offest(vm->assembly, target_type, (u32)index);
 
-		result.v_ptr.data.stack_ptr = ptr + ptr_offset; // pointer shift
+			result = ptr + ptr_offset; // pointer shift
+		}
 	} else {
+		BL_ASSERT(!comptime && "Builtin on comptime is not implemented yet!");
 		/* builtin member */
 		if (member_ptr->builtin_id == MIR_BUILTIN_ID_ARR_PTR) {
 			/* slice .ptr */
 			const ptrdiff_t ptr_offset =
 			    mir_get_struct_elem_offest(vm->assembly, target_type, 1);
-			result.v_ptr.data.stack_ptr = ptr + ptr_offset; // pointer shift
+			result = ptr + ptr_offset; // pointer shift
 		} else if (member_ptr->builtin_id == MIR_BUILTIN_ID_ARR_LEN) {
 			/* slice .len*/
 			const ptrdiff_t len_offset =
 			    mir_get_struct_elem_offest(vm->assembly, target_type, 0);
-			result.v_ptr.data.stack_ptr = ptr + len_offset; // pointer shift
+			result = ptr + len_offset; // pointer shift
 		} else {
 			BL_ABORT("invalid slice member!");
 		}
 	}
 
-	/* push result address on the stack */
-	push_stack(vm, &result, member_ptr->base.value.type);
+	if (comptime) {
+		mir_set_const_ptr(&member_ptr->base.value.data.v_ptr, result, MIR_CP_VALUE);
+	} else {
+		/* push result address on the stack */
+		push_stack(vm, &result, member_ptr->base.value.type);
+	}
 }
 
 void

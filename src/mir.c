@@ -140,7 +140,8 @@ typedef struct {
 		MirType *t_resolve_type_fn;
 		MirType *t_test_case_fn;
 
-		/* TypeInfo cached types */
+		/* TypeInfo cached types. */
+		/* Any type info can be generated after all this types are found in assembly. */
 		MirType *t_TypeKind;
 		MirType *t_TypeInfo;
 		MirType *t_TypeInfoInt;
@@ -4265,8 +4266,13 @@ reduce_instr(Context *cnt, MirInstr *instr)
 	case MIR_INSTR_TYPE_ENUM:
 	case MIR_INSTR_SIZEOF:
 	case MIR_INSTR_ALIGNOF:
-	case MIR_INSTR_DECL_REF:
+	case MIR_INSTR_DECL_REF: {
+		erase_instr(instr);
+		break;
+	}
+
 	case MIR_INSTR_MEMBER_PTR: {
+		vm_execute_instr(&cnt->vm, instr);
 		erase_instr(instr);
 		break;
 	}
@@ -4855,18 +4861,14 @@ analyze_instr_member_ptr(Context *cnt, MirInstrMemberPtr *member_ptr)
 			return ANALYZE_RESULT(FAILED, 0);
 		}
 
-		{
-			BL_ASSERT(found->kind == SCOPE_ENTRY_MEMBER);
-			MirMember *member = found->data.member;
+		BL_ASSERT(found->kind == SCOPE_ENTRY_MEMBER);
+		MirMember *member = found->data.member;
 
-			/* setup member_ptr type */
-			MirType *type = create_type_ptr(cnt, member->type);
-			BL_ASSERT(type);
-			member_ptr->base.value.type = type;
-		}
-
+		/* setup member_ptr type */
+		member_ptr->base.value.type      = create_type_ptr(cnt, member->type);
 		member_ptr->base.value.addr_mode = target_addr_mode;
 		member_ptr->scope_entry          = found;
+		member_ptr->base.comptime        = target_ptr->comptime;
 
 		return ANALYZE_RESULT(PASSED, 0);
 	}
@@ -4893,7 +4895,7 @@ analyze_instr_member_ptr(Context *cnt, MirInstrMemberPtr *member_ptr)
 			goto INVALID;
 		}
 
-		/* lookup for member inside struct */
+		/* lookup for member inside scope */
 		Scope *     scope = sub_type->data.enm.scope;
 		ID *        rid   = &ast_member_ident->data.ident.id;
 		ScopeEntry *found = scope_lookup(scope, rid, false, true);
@@ -4906,13 +4908,11 @@ analyze_instr_member_ptr(Context *cnt, MirInstrMemberPtr *member_ptr)
 			return ANALYZE_RESULT(FAILED, 0);
 		}
 
-		{
-			BL_ASSERT(found->kind == SCOPE_ENTRY_VARIANT);
-			MirVariant *variant = found->data.variant;
-			BL_ASSERT(variant);
-			member_ptr->base.value.data      = variant->value->data;
-			member_ptr->base.value.addr_mode = MIR_VAM_LVALUE_CONST;
-		}
+		BL_ASSERT(found->kind == SCOPE_ENTRY_VARIANT);
+		MirVariant *variant = found->data.variant;
+		BL_ASSERT(variant);
+		member_ptr->base.value.data      = variant->value->data;
+		member_ptr->base.value.addr_mode = MIR_VAM_LVALUE_CONST;
 
 		member_ptr->scope_entry          = found;
 		member_ptr->base.value.type      = sub_type;
@@ -6028,10 +6028,12 @@ analyze_instr_binop(Context *cnt, MirInstrBinop *binop)
 		const bool can_propagate_LtoR =
 		    can_impl_cast(lhs_type, rhs_type) || lhs_is_const_int;
 
+		/*
 		char type_nameL[256];
 		mir_type_to_str(type_nameL, 256, lhs_type, true);
 		char type_nameR[256];
 		mir_type_to_str(type_nameR, 256, rhs_type, true);
+		*/
 
 		if (can_propagate_LtoR) {
 			if (analyze_slot(cnt, &analyze_slot_conf_default, &binop->lhs, rhs_type) !=
