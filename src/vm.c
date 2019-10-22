@@ -1406,19 +1406,21 @@ interp_instr_elem_ptr(VM *vm, MirInstrElemPtr *elem_ptr)
 {
 	/* pop index from stack */
 	BL_ASSERT(mir_is_pointer_type(elem_ptr->arr_ptr->value.type));
-	MirType *         arr_type   = mir_deref_type(elem_ptr->arr_ptr->value.type);
-	MirType *         index_type = elem_ptr->index->value.type;
-	VMStackPtr        index_ptr  = fetch_value(vm, elem_ptr->index);
-	MirConstValueData result     = {0};
-
-	VMStackPtr arr_ptr = fetch_value(vm, elem_ptr->arr_ptr);
-	arr_ptr            = ((MirConstValueData *)arr_ptr)->v_ptr.data.stack_ptr;
+	MirType *  arr_type   = mir_deref_type(elem_ptr->arr_ptr->value.type);
+	MirType *  index_type = elem_ptr->index->value.type;
+	VMStackPtr index_ptr  = fetch_value(vm, elem_ptr->index);
+	VMStackPtr result     = NULL;
+	VMStackPtr arr_ptr    = fetch_value(vm, elem_ptr->arr_ptr);
+	arr_ptr               = ((MirConstValueData *)arr_ptr)->v_ptr.data.stack_ptr;
 	BL_ASSERT(arr_ptr && index_ptr);
+
+	const bool comptime = elem_ptr->base.comptime;
 
 	MirConstValueData index = {0};
 	read_value(&index, index_ptr, index_type);
 
 	if (elem_ptr->target_is_slice) {
+		BL_ASSERT(!comptime && "Missing implementation for elem_ptr on comptime slice!");
 		MirType *len_type = mir_get_struct_elem_type(arr_type, MIR_SLICE_LEN_INDEX);
 		MirType *ptr_type = mir_get_struct_elem_type(arr_type, MIR_SLICE_PTR_INDEX);
 
@@ -1453,13 +1455,17 @@ interp_instr_elem_ptr(VM *vm, MirInstrElemPtr *elem_ptr)
 			exec_abort(vm, 0);
 		}
 
-		result.v_ptr.data.stack_ptr = (VMStackPtr)(
-		    (ptr_tmp.v_ptr.data.stack_ptr) + (index.v_u64 * elem_type->store_size_bytes));
+		result = (VMStackPtr)((ptr_tmp.v_ptr.data.stack_ptr) +
+		                      (index.v_u64 * elem_type->store_size_bytes));
+
+		/* push result address on the stack */
+		push_stack(vm, &result, elem_ptr->base.value.type);
+		return;
 	} else {
 		MirType *elem_type = arr_type->data.array.elem_type;
 		BL_ASSERT(elem_type);
 
-		{
+		{ /* Check ranges. */
 			const s64 len = arr_type->data.array.len;
 			if (index.v_s64 >= len) {
 				msg_error("Array index is out of the bounds! Array index "
@@ -1472,21 +1478,18 @@ interp_instr_elem_ptr(VM *vm, MirInstrElemPtr *elem_ptr)
 			}
 		}
 
-		if (elem_ptr->arr_ptr->comptime) BL_ABORT_ISSUE(57);
-
-		result.v_ptr.data.stack_ptr =
-		    (VMStackPtr)((arr_ptr) + (index.v_u64 * elem_type->store_size_bytes));
-
-#if BL_DEBUG
-		{
-			ptrdiff_t _diff = result.v_u64 - (uintptr_t)arr_ptr;
-			BL_ASSERT(_diff / elem_type->store_size_bytes == index.v_u64);
+		if (comptime) {
+			MirConstValue *arr_ptr_val = (MirConstValue *)arr_ptr;
+			result = (VMStackPtr)arr_ptr_val->data.v_array.elems->data[index.v_u64];
+			mir_set_const_ptr(&elem_ptr->base.value.data.v_ptr, result, MIR_CP_VALUE);
+			return;
 		}
-#endif
-	}
 
-	/* push result address on the stack */
-	push_stack(vm, &result, elem_ptr->base.value.type);
+		result = (VMStackPtr)((arr_ptr) + (index.v_u64 * elem_type->store_size_bytes));
+
+		/* push result address on the stack */
+		push_stack(vm, &result, elem_ptr->base.value.type);
+	}
 }
 
 void
