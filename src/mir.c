@@ -206,50 +206,11 @@ typedef struct {
 
 /* Ids of builtin symbols, hash is calculated inside init_builtins function
  * later. */
-// clang-format off
 static ID builtin_ids[_MIR_BUILTIN_ID_COUNT] = {
-    {.str = "type",                  .hash = 0},
-    {.str = "s8",                    .hash = 0},
-    {.str = "s16",                   .hash = 0},
-    {.str = "s32",                   .hash = 0},
-    {.str = "s64",                   .hash = 0},
-    {.str = "u8",                    .hash = 0},
-    {.str = "u16",                   .hash = 0},
-    {.str = "u32",                   .hash = 0},
-    {.str = "u64",                   .hash = 0},
-    {.str = "usize",                 .hash = 0},
-    {.str = "bool",                  .hash = 0},
-    {.str = "f32",                   .hash = 0},
-    {.str = "f64",                   .hash = 0},
-    {.str = "void",                  .hash = 0},
-    {.str = "string",                .hash = 0},
-    {.str = "null_t",                .hash = 0},
-    {.str = "main",                  .hash = 0},
-    {.str = "len",                   .hash = 0},
-    {.str = "ptr",                   .hash = 0},
-    {.str = "base",                  .hash = 0},
-    {.str = "Any",                   .hash = 0},
-    {.str = "TypeKind",              .hash = 0},
-    {.str = "TypeInfo",              .hash = 0},
-    {.str = "TypeInfoType",          .hash = 0},
-    {.str = "TypeInfoVoid",          .hash = 0},
-    {.str = "TypeInfoInt",           .hash = 0},
-    {.str = "TypeInfoReal",          .hash = 0},
-    {.str = "TypeInfoFn",            .hash = 0},
-    {.str = "TypeInfoPtr",           .hash = 0},
-    {.str = "TypeInfoBool",          .hash = 0},
-    {.str = "TypeInfoArray",         .hash = 0},
-    {.str = "TypeInfoStruct",        .hash = 0},
-    {.str = "TypeInfoEnum",          .hash = 0},
-    {.str = "TypeInfoNull",          .hash = 0},
-    {.str = "TypeInfoString",        .hash = 0},
-    {.str = "TypeInfoSlice",         .hash = 0},
-    {.str = "TypeInfoVArgs",         .hash = 0},
-    {.str = "TypeInfoStructMember",  .hash = 0},
-    {.str = "TypeInfoEnumVariant",   .hash = 0},
-    {.str = "TypeInfoFnArg",         .hash = 0},
+#define GEN_BUILTIN_IDS
+#include "mir.inc"
+#undef GEN_BUILTIN_IDS
 };
-// clang-format on
 
 /* Arena destructor for functions. */
 static void
@@ -351,6 +312,8 @@ create_type_enum(Context *               cnt,
 MirType *
 create_type_struct_special(Context *cnt, MirTypeKind kind, ID *id, MirType *elem_ptr_type);
 
+/* These functions will generate LLVM type representation for each BL type, this functions fulfill
+ * some BL type's missing values as sizes and alignment also. */
 static void
 init_llvm_type_int(Context *cnt, MirType *type);
 
@@ -424,6 +387,9 @@ create_variant(Context *cnt, ID *id, Scope *scope, MirConstValue *value);
 static MirConstValue *
 create_const_value(Context *cnt, MirType *type);
 
+/* init_or_create_* functions can be used in two ways, 'v' is initialized when we pass one and
+ * function returns pointer to this value. If 'v' is NULL, new value is created with desired values
+ * set. */
 static MirConstValue *
 init_or_create_const_integer(Context *cnt, MirConstValue *v, MirType *type, u64 i);
 
@@ -461,6 +427,8 @@ maybe_mark_as_unrechable(MirInstrBlock *block, MirInstr *instr);
 static void
 append_current_block(Context *cnt, MirInstr *instr);
 
+/* insert_* functions are used of compiler-generated instructions (not written by programmer). Such
+ * instructions are marked as implicit. */
 static MirInstr *
 insert_instr_load(Context *cnt, MirInstr *src);
 
@@ -473,6 +441,7 @@ insert_instr_addrof(Context *cnt, MirInstr *src);
 static MirInstr *
 insert_instr_toany(Context *cnt, MirInstr *expr);
 
+/* Return cast operation if there is one between 'from' and 'to' type. */
 static MirCastOp
 get_cast_op(MirType *from, MirType *to);
 
@@ -482,6 +451,7 @@ _create_instr(Context *cnt, MirInstrKind kind, Ast *node);
 static MirInstr *
 create_instr_call_comptime(Context *cnt, Ast *node, MirInstr *fn);
 
+/* Append functions creates desired instruction and push it into current basic block. */
 static MirInstr *
 append_instr_arg(Context *cnt, Ast *node, unsigned i);
 
@@ -700,7 +670,7 @@ erase_instr_tree(MirInstr *instr);
 static MirInstr *
 create_instr_vargs_impl(Context *cnt, MirType *type, TSmallArray_InstrPtr *values);
 
-/* ast */
+/* ast_* functions are used for generation of MIR from input AST. */
 static MirInstr *
 ast_create_impl_fn_call(Context *   cnt,
                         Ast *       node,
@@ -856,12 +826,21 @@ static MirInstr *
 ast_expr_compound(Context *cnt, Ast *cmp);
 
 /* analyze */
+
+/* This function has effect only on comptime instructions which can be evaluated directly after
+ * they are analyzed. Reduction can use VM for execution of passed instruction and can also delete
+ * the instruction from the owner block if actual value is const expression value. (Delete of an
+ * instruction means only remove from basic block, all instruction's data will be keept utouched) */
 static void
 reduce_instr(Context *cnt, MirInstr *instr);
 
+/* Main analyze entry function. */
 static AnalyzeResult
 analyze_instr(Context *cnt, MirInstr *instr);
 
+/* This function takes configuration pipeline as 'conf', input instruction and optional slot type.
+ * Behavior of this function depends on passed pipeline, it is used for implicit operations needed
+ * by slot-owner instruction. */
 static AnalyzeState
 analyze_slot(Context *cnt, const AnalyzeSlotConfig *conf, MirInstr **input, MirType *slot_type);
 
@@ -891,31 +870,50 @@ analyze_stage_implicit_cast(Context *cnt, MirInstr **input, MirType *slot_type);
 static AnalyzeStageState
 analyze_stage_report_type_mismatch(Context *cnt, MirInstr **input, MirType *slot_type);
 
+/* Dummy slot analyze pipeline. */
 static const AnalyzeSlotConfig analyze_slot_conf_reduce_only = {.count = 0};
 
+/* Basic slot analyze pipeline generation only load instruction. */
 static const AnalyzeSlotConfig analyze_slot_conf_basic = {.count  = 1,
                                                           .stages = {analyze_stage_load}};
 
-static const AnalyzeSlotConfig analyze_slot_conf_default = {.count  = 6,
-                                                            .stages = {
-                                                                analyze_stage_set_volatile_expr,
-                                                                analyze_stage_set_null,
-                                                                analyze_stage_set_auto,
-                                                                analyze_stage_load,
-                                                                analyze_stage_implicit_cast,
-                                                                analyze_stage_report_type_mismatch,
-                                                            }};
+/* Default slot analyze pipeline. */
+static const AnalyzeSlotConfig analyze_slot_conf_default = {
+    .count  = 6,
+    .stages = {
+        /* Set volatile type if needed. */
+        analyze_stage_set_volatile_expr,
+        /* Set type of null expression. */
+        analyze_stage_set_null,
+        /* Set destination type for auto cast. */
+        analyze_stage_set_auto,
+        /* Insert load instruction if needed. */
+        analyze_stage_load,
+        /* Generate implicit cast if possible. */
+        analyze_stage_implicit_cast,
+        /* Validate result type and expected type of en expression. */
+        analyze_stage_report_type_mismatch,
+    }};
 
-static const AnalyzeSlotConfig analyze_slot_conf_full = {.count  = 7,
-                                                         .stages = {
-                                                             analyze_stage_set_volatile_expr,
-                                                             analyze_stage_set_null,
-                                                             analyze_stage_set_auto,
-                                                             analyze_stage_toany,
-                                                             analyze_stage_load,
-                                                             analyze_stage_implicit_cast,
-                                                             analyze_stage_report_type_mismatch,
-                                                         }};
+/* Full slot analyze pipeline. */
+static const AnalyzeSlotConfig analyze_slot_conf_full = {
+    .count  = 7,
+    .stages = {
+        /* Set volatile type if needed. */
+        analyze_stage_set_volatile_expr,
+        /* Set type of null expression. */
+        analyze_stage_set_null,
+        /* Set destination type for auto cast. */
+        analyze_stage_set_auto,
+        /* Try to cast input expression to Any value. */
+        analyze_stage_toany,
+        /* Insert load instruction if needed. */
+        analyze_stage_load,
+        /* Generate implicit cast if possible. */
+        analyze_stage_implicit_cast,
+        /* Validate result type and expected type of en expression. */
+        analyze_stage_report_type_mismatch,
+    }};
 
 /* This function produce analyze of implicit call to the type resolver function in MIR and set
  * out_type when analyze passed without problems. When analyze does not pass postpone is returned
@@ -1043,6 +1041,7 @@ analyze(Context *cnt);
 static void
 analyze_report_unresolved(Context *cnt);
 
+/* Runtime type info data generation. Following functions are used for RTTI generation. */
 static MirVar *
 gen_RTTI(Context *cnt, MirType *type);
 
@@ -1149,6 +1148,7 @@ is_instr_type_volatile(MirInstr *instr)
 	}
 }
 
+/* True when type is pointer type. */
 static inline bool
 is_pointer_to_type_type(MirType *type)
 {
@@ -1159,6 +1159,7 @@ is_pointer_to_type_type(MirType *type)
 	return type->kind == MIR_TYPE_TYPE;
 }
 
+/* Compare two types. True when they are equal. */
 static inline bool
 type_cmp(MirType *first, MirType *second)
 {
@@ -1166,6 +1167,7 @@ type_cmp(MirType *first, MirType *second)
 	return first->id.hash == second->id.hash;
 }
 
+/* True when iomplicit cast can be generated. */
 static inline bool
 can_impl_cast(MirType *from, MirType *to)
 {
@@ -1199,6 +1201,7 @@ can_impl_cast(MirType *from, MirType *to)
 	return true;
 }
 
+/* Get callee function from call instruction. Assert in debug when no such function exists. */
 static inline MirFn *
 get_callee(MirInstrCall *call)
 {
@@ -1210,18 +1213,21 @@ get_callee(MirInstrCall *call)
 	return fn;
 }
 
+/* Return current basic block or NULL. */
 static inline MirInstrBlock *
 get_current_block(Context *cnt)
 {
 	return cnt->ast.current_block;
 }
 
+/* Return current insert function or NULL. */
 static inline MirFn *
 get_current_fn(Context *cnt)
 {
 	return cnt->ast.current_block ? cnt->ast.current_block->owner_fn : NULL;
 }
 
+/* Terminate block by terminator instruction. */
 static inline void
 terminate_block(MirInstrBlock *block, MirInstr *terminator)
 {
@@ -1230,12 +1236,14 @@ terminate_block(MirInstrBlock *block, MirInstr *terminator)
 	block->terminal = terminator;
 }
 
+/* True when block is terminated. */
 static inline bool
 is_block_terminated(MirInstrBlock *block)
 {
 	return block->terminal;
 }
 
+/* True when current insert block is terminated. */
 static inline bool
 is_current_block_terminated(Context *cnt)
 {
@@ -1249,6 +1257,7 @@ schedule_RTTI_generation(Context *cnt, MirType *type)
 		thtbl_insert_empty(&cnt->analyze.RTTI_entry_types, (u64)type);
 }
 
+/* Change instruction kind. */
 static inline MirInstr *
 mutate_instr(MirInstr *instr, MirInstrKind kind)
 {
@@ -1257,6 +1266,7 @@ mutate_instr(MirInstr *instr, MirInstrKind kind)
 	return instr;
 }
 
+/* Erase instruction from block. */
 static inline void
 erase_instr(MirInstr *instr)
 {
@@ -1273,6 +1283,7 @@ erase_instr(MirInstr *instr)
 	instr->next = NULL;
 }
 
+/* Insert instruction in block after 'after' instruction. */
 static inline void
 insert_instr_after(MirInstr *after, MirInstr *instr)
 {
@@ -1290,6 +1301,7 @@ insert_instr_after(MirInstr *after, MirInstr *instr)
 	if (block->last_instr == after) instr->owner_block->last_instr = instr;
 }
 
+/* Insert instruction in block before 'before' instruction. */
 static inline void
 insert_instr_before(MirInstr *before, MirInstr *instr)
 {
@@ -1307,6 +1319,7 @@ insert_instr_before(MirInstr *before, MirInstr *instr)
 	if (block->entry_instr == before) instr->owner_block->entry_instr = instr;
 }
 
+/* Insert instruction into the global scope of assembly. */
 static inline void
 push_into_gscope(Context *cnt, MirInstr *instr)
 {
@@ -1354,6 +1367,7 @@ analyze_notify_provided(Context *cnt, u64 hash)
 	tarray_terminate(wq);
 }
 
+/* Required analyze of complier-generated instruction. */
 static inline void
 analyze_instr_rq(Context *cnt, MirInstr *instr)
 {
@@ -1362,6 +1376,7 @@ analyze_instr_rq(Context *cnt, MirInstr *instr)
 		           mir_instr_name(instr));
 }
 
+/* Generate unique name with optional prefix. */
 static inline const char *
 gen_uq_name(const char *prefix)
 {
@@ -4274,6 +4289,13 @@ reduce_instr(Context *cnt, MirInstr *instr)
 		break;
 	}
 
+	case MIR_INSTR_ADDROF:
+	case MIR_INSTR_DECL_DIRECT_REF:
+	case MIR_INSTR_LOAD:
+	case MIR_INSTR_CAST:
+	case MIR_INSTR_UNOP:
+	case MIR_INSTR_BINOP:
+	case MIR_INSTR_ELEM_PTR:
 	case MIR_INSTR_MEMBER_PTR: {
 		vm_execute_instr(&cnt->vm, instr);
 		erase_instr(instr);
@@ -4282,42 +4304,6 @@ reduce_instr(Context *cnt, MirInstr *instr)
 
 	case MIR_INSTR_COMPOUND: {
 		if (!((MirInstrCompound *)instr)->is_naked) erase_instr(instr);
-		break;
-	}
-
-	case MIR_INSTR_BINOP: {
-		vm_execute_instr(&cnt->vm, instr);
-		erase_instr(instr);
-		break;
-	}
-
-	case MIR_INSTR_UNOP: {
-		vm_execute_instr(&cnt->vm, instr);
-		erase_instr(instr);
-		break;
-	}
-
-	case MIR_INSTR_CAST: {
-		vm_execute_instr(&cnt->vm, instr);
-		erase_instr(instr);
-		break;
-	}
-
-	case MIR_INSTR_LOAD: {
-		vm_execute_instr(&cnt->vm, instr);
-		erase_instr(instr);
-		break;
-	}
-
-	case MIR_INSTR_DECL_DIRECT_REF: {
-		vm_execute_instr(&cnt->vm, instr);
-		erase_instr(instr);
-		break;
-	}
-
-	case MIR_INSTR_ADDROF: {
-		vm_execute_instr(&cnt->vm, instr);
-		erase_instr(instr);
 		break;
 	}
 
@@ -4728,6 +4714,9 @@ analyze_instr_elem_ptr(Context *cnt, MirInstrElemPtr *elem_ptr)
 		            "Expected array or slice type.");
 		return ANALYZE_RESULT(FAILED, 0);
 	}
+
+	elem_ptr->base.comptime        = elem_ptr->arr_ptr->comptime;
+	elem_ptr->base.value.addr_mode = elem_ptr->arr_ptr->value.addr_mode;
 
 	reduce_instr(cnt, elem_ptr->arr_ptr);
 	return ANALYZE_RESULT(PASSED, 0);

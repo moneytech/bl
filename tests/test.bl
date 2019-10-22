@@ -6,20 +6,9 @@ T :: struct {
 }
 
 BAR :: {:T: 10, 20};
-//ARR :: {:[2]s32: 10, 20};
+ARR :: {:[2]s32: 10, 20};
 FOO :: BAR.j;
 
-Enum :: enum {
-    A;
-    B;
-    C;
-}
-
 main :: fn () s32 {
-    HOMO :: BAR.i + 10;
-    i := BAR.i;
-
-    e := Enum.A;
-    
-    return i + FOO;
+    return ARR[0];
 }
