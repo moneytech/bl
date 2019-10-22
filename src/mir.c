@@ -1205,7 +1205,7 @@ get_callee(MirInstrCall *call)
 	MirConstValue *callee_val = &call->callee->value;
 	BL_ASSERT(callee_val->type && callee_val->type->kind == MIR_TYPE_FN);
 
-	MirFn *fn = callee_val->data.v_ptr.data.fn;
+	MirFn *fn = mir_get_const_ptr(MirFn *, &callee_val->data.v_ptr, MIR_CP_FN);
 	BL_ASSERT(fn);
 	return fn;
 }
@@ -1977,15 +1977,16 @@ lookup_builtin(Context *cnt, MirBuiltinIdKind kind)
 	MirVar *var = found->data.var;
 
 	BL_ASSERT(var);
-	BL_ASSERT(var->comptime && var->value.type->kind == MIR_TYPE_TYPE);
-	BL_ASSERT(var->value.data.v_ptr.data.type);
+	BL_ASSERT(var->comptime);
+
+	MirType *type = mir_get_const_ptr(MirType *, &var->value.data.v_ptr, MIR_CP_TYPE);
 
 	/* Wait when internal is not complete!  */
-	if (is_incomplete_struct_type(var->value.data.v_ptr.data.type)) {
+	if (is_incomplete_struct_type(type)) {
 		return NULL;
 	}
 
-	return var->value.data.v_ptr.data.type;
+	return type;
 }
 
 MirType *
@@ -2140,9 +2141,8 @@ complete_type_struct(Context *              cnt,
 	BL_ASSERT(fwd_decl->value.type->kind == MIR_TYPE_TYPE &&
 	          "Forward struct declaration does not point to type definition!");
 
-	BL_ASSERT(fwd_decl->value.data.v_ptr.kind == MIR_CP_TYPE);
-
-	MirType *incomplete_type = fwd_decl->value.data.v_ptr.data.type;
+	MirType *incomplete_type =
+	    mir_get_const_ptr(MirType *, &fwd_decl->value.data.v_ptr, MIR_CP_TYPE);
 	BL_ASSERT(incomplete_type);
 
 	BL_ASSERT(incomplete_type->kind == MIR_TYPE_STRUCT &&
@@ -4465,7 +4465,7 @@ analyze_instr_compound(Context *cnt, MirInstrCompound *cmp)
 			            "Expected type before compound expression.");
 			return ANALYZE_RESULT(FAILED, 0);
 		}
-		type = instr_type->value.data.v_ptr.data.type;
+		type = mir_get_const_ptr(MirType *, &instr_type->value.data.v_ptr, MIR_CP_TYPE);
 	}
 
 	BL_ASSERT(type);
@@ -4812,9 +4812,8 @@ analyze_instr_member_ptr(Context *cnt, MirInstrMemberPtr *member_ptr)
 		target_type            = mir_deref_type(target_type);
 	}
 
-	/* struct type */
-	if (target_type->kind == MIR_TYPE_STRUCT || target_type->kind == MIR_TYPE_STRING ||
-	    target_type->kind == MIR_TYPE_SLICE || target_type->kind == MIR_TYPE_VARGS) {
+	/* composit types */
+	if (mir_is_composit_type(target_type)) {
 		/* Check if structure type is complete, if not analyzer must wait for it!  */
 		if (is_incomplete_struct_type(target_type))
 			return ANALYZE_RESULT(WAITING, target_type->user_id->hash);
@@ -4883,7 +4882,8 @@ analyze_instr_member_ptr(Context *cnt, MirInstrMemberPtr *member_ptr)
 			return ANALYZE_RESULT(FAILED, 0);
 		}
 
-		MirType *sub_type = member_ptr->target_ptr->value.data.v_ptr.data.type;
+		MirType *sub_type = mir_get_const_ptr(
+		    MirType *, &member_ptr->target_ptr->value.data.v_ptr, MIR_CP_TYPE);
 		BL_ASSERT(sub_type);
 
 		if (sub_type->kind != MIR_TYPE_ENUM) {
@@ -5028,7 +5028,7 @@ analyze_instr_sizeof(Context *cnt, MirInstrSizeof *szof)
 	BL_ASSERT(type);
 
 	if (type->kind == MIR_TYPE_TYPE) {
-		type = szof->expr->value.data.v_ptr.data.type;
+		type = mir_get_const_ptr(MirType *, &szof->expr->value.data.v_ptr, MIR_CP_TYPE);
 		BL_ASSERT(type);
 	}
 
@@ -5057,7 +5057,8 @@ analyze_instr_type_info(Context *cnt, MirInstrTypeInfo *type_info)
 	BL_ASSERT(type);
 
 	if (type->kind == MIR_TYPE_TYPE) {
-		type = type_info->expr->value.data.v_ptr.data.type;
+		type =
+		    mir_get_const_ptr(MirType *, &type_info->expr->value.data.v_ptr, MIR_CP_TYPE);
 		BL_ASSERT(type);
 	}
 
@@ -5084,7 +5085,7 @@ analyze_instr_alignof(Context *cnt, MirInstrAlignof *alof)
 	BL_ASSERT(type);
 
 	if (type->kind == MIR_TYPE_TYPE) {
-		type = alof->expr->value.data.v_ptr.data.type;
+		type = mir_get_const_ptr(MirType *, &alof->expr->value.data.v_ptr, MIR_CP_TYPE);
 		BL_ASSERT(type);
 	}
 
@@ -5568,15 +5569,14 @@ analyze_instr_type_fn(Context *cnt, MirInstrTypeFn *type_fn)
 		}
 
 		BL_ASSERT(type_fn->ret_type->comptime);
-		ret_type = type_fn->ret_type->value.data.v_ptr.data.type;
+		ret_type =
+		    mir_get_const_ptr(MirType *, &type_fn->ret_type->value.data.v_ptr, MIR_CP_TYPE);
 		BL_ASSERT(ret_type);
 	}
 
-	{
-		MirConstPtr *const_ptr = &type_fn->base.value.data.v_ptr;
-		mir_set_const_ptr(
-		    const_ptr, create_type_fn(cnt, NULL, ret_type, args, is_vargs), MIR_CP_FN);
-	}
+	MirConstPtr *const_ptr = &type_fn->base.value.data.v_ptr;
+	mir_set_const_ptr(
+	    const_ptr, create_type_fn(cnt, NULL, ret_type, args, is_vargs), MIR_CP_FN);
 
 	return ANALYZE_RESULT(PASSED, 0);
 }
@@ -5639,11 +5639,7 @@ analyze_instr_decl_arg(Context *cnt, MirInstrDeclArg *decl)
 		return ANALYZE_RESULT(FAILED, 0);
 	}
 
-	BL_ASSERT(decl->type->value.data.v_ptr.data.any);
-	BL_ASSERT(decl->type->value.data.v_ptr.kind == MIR_CP_TYPE);
-	MirType *type = decl->type->value.data.v_ptr.data.type;
-
-	decl->arg->type = type;
+	decl->arg->type = mir_get_const_ptr(MirType *, &decl->type->value.data.v_ptr, MIR_CP_TYPE);
 	return ANALYZE_RESULT(PASSED, 0);
 }
 
@@ -5675,7 +5671,8 @@ analyze_instr_type_struct(Context *cnt, MirInstrTypeStruct *type_struct)
 			BL_ASSERT(decl_member->base.comptime);
 
 			/* solve member type */
-			member_type = decl_member->type->value.data.v_ptr.data.type;
+			member_type = mir_get_const_ptr(
+			    MirType *, &decl_member->type->value.data.v_ptr, MIR_CP_TYPE);
 
 			if (member_type->kind == MIR_TYPE_FN) {
 				builder_msg(BUILDER_MSG_ERROR,
@@ -5760,7 +5757,8 @@ analyze_instr_type_slice(Context *cnt, MirInstrTypeSlice *type_slice)
 	}
 
 	BL_ASSERT(type_slice->elem_type->comptime && "This should be an error");
-	MirType *elem_type = type_slice->elem_type->value.data.v_ptr.data.type;
+	MirType *elem_type =
+	    mir_get_const_ptr(MirType *, &type_slice->elem_type->value.data.v_ptr, MIR_CP_TYPE);
 	BL_ASSERT(elem_type);
 
 	elem_type = create_type_ptr(cnt, elem_type);
