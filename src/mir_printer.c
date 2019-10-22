@@ -272,7 +272,7 @@ static void
 print_instr_load(MirInstrLoad *load, FILE *stream);
 
 static void
-print_instr_addrof(MirInstrAddrOf *addrof, FILE *stream);
+print_instr_addrof(MirInstrAddrof *addrof, FILE *stream);
 
 static void
 print_instr_elem_ptr(MirInstrElemPtr *elem_ptr, FILE *stream);
@@ -758,7 +758,7 @@ print_instr_load(MirInstrLoad *load, FILE *stream)
 }
 
 void
-print_instr_addrof(MirInstrAddrOf *addrof, FILE *stream)
+print_instr_addrof(MirInstrAddrof *addrof, FILE *stream)
 {
 	print_instr_head(&addrof->base, stream, "addrof");
 	fprintf(stream, "%%%llu", (unsigned long long)addrof->src->id);
@@ -1066,7 +1066,7 @@ mir_print_instr(MirInstr *instr, FILE *stream)
 		print_instr_type_ptr((MirInstrTypePtr *)instr, stream);
 		break;
 	case MIR_INSTR_ADDROF:
-		print_instr_addrof((MirInstrAddrOf *)instr, stream);
+		print_instr_addrof((MirInstrAddrof *)instr, stream);
 		break;
 	case MIR_INSTR_MEMBER_PTR:
 		print_instr_member_ptr((MirInstrMemberPtr *)instr, stream);

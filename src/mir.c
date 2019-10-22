@@ -940,7 +940,7 @@ static AnalyzeResult
 analyze_instr_member_ptr(Context *cnt, MirInstrMemberPtr *member_ptr);
 
 static AnalyzeResult
-analyze_instr_addrof(Context *cnt, MirInstrAddrOf *addrof);
+analyze_instr_addrof(Context *cnt, MirInstrAddrof *addrof);
 
 static AnalyzeResult
 analyze_instr_block(Context *cnt, MirInstrBlock *block);
@@ -3629,7 +3629,7 @@ MirInstr *
 create_instr_addrof(Context *cnt, Ast *node, MirInstr *src)
 {
 	ref_instr(src);
-	MirInstrAddrOf *tmp = CREATE_INSTR(cnt, MIR_INSTR_ADDROF, node, MirInstrAddrOf *);
+	MirInstrAddrof *tmp = CREATE_INSTR(cnt, MIR_INSTR_ADDROF, node, MirInstrAddrof *);
 	tmp->src            = src;
 	return &tmp->base;
 }
@@ -4156,7 +4156,7 @@ erase_instr_tree(MirInstr *instr)
 		}
 
 		case MIR_INSTR_ADDROF: {
-			MirInstrAddrOf *addrof = (MirInstrAddrOf *)top;
+			MirInstrAddrof *addrof = (MirInstrAddrof *)top;
 			unref_instr(addrof->src);
 			tsa_push_InstrPtr64(&queue, addrof->src);
 			break;
@@ -4268,10 +4268,7 @@ reduce_instr(Context *cnt, MirInstr *instr)
 	if (!instr->comptime && instr->kind != MIR_INSTR_COMPOUND) return;
 
 	switch (instr->kind) {
-	case MIR_INSTR_CONST:
-	case MIR_INSTR_DECL_MEMBER:
-	case MIR_INSTR_DECL_VARIANT:
-	case MIR_INSTR_DECL_ARG:
+		/* Const expr value set during analyze pass. */
 	case MIR_INSTR_TYPE_FN:
 	case MIR_INSTR_TYPE_ARRAY:
 	case MIR_INSTR_TYPE_PTR:
@@ -4279,22 +4276,26 @@ reduce_instr(Context *cnt, MirInstr *instr)
 	case MIR_INSTR_TYPE_SLICE:
 	case MIR_INSTR_TYPE_VARGS:
 	case MIR_INSTR_TYPE_ENUM:
-	case MIR_INSTR_SIZEOF:
-	case MIR_INSTR_ALIGNOF:
+	case MIR_INSTR_CONST:
+	case MIR_INSTR_DECL_MEMBER:
+	case MIR_INSTR_DECL_VARIANT:
+	case MIR_INSTR_DECL_ARG:
 	case MIR_INSTR_DECL_REF: {
 		erase_instr(instr);
 		break;
 	}
 
-	case MIR_INSTR_ADDROF:
-	case MIR_INSTR_DECL_DIRECT_REF:
-	case MIR_INSTR_LOAD:
+	case MIR_INSTR_DECL_DIRECT_REF: 
 	case MIR_INSTR_CAST:
-	case MIR_INSTR_UNOP:
 	case MIR_INSTR_BINOP:
+	case MIR_INSTR_UNOP:
 	case MIR_INSTR_ELEM_PTR:
+	case MIR_INSTR_ADDROF:
+	case MIR_INSTR_SIZEOF:
+	case MIR_INSTR_ALIGNOF:
+	case MIR_INSTR_LOAD:
 	case MIR_INSTR_MEMBER_PTR: {
-		vm_execute_instr(&cnt->vm, instr);
+		vm_eval_comptime_instr(instr);
 		erase_instr(instr);
 		break;
 	}
@@ -4712,7 +4713,7 @@ analyze_instr_elem_ptr(Context *cnt, MirInstrElemPtr *elem_ptr)
 		return ANALYZE_RESULT(FAILED, 0);
 	}
 
-	elem_ptr->base.comptime        = elem_ptr->arr_ptr->comptime;
+	elem_ptr->base.comptime        = elem_ptr->arr_ptr->comptime && elem_ptr->index->comptime;
 	elem_ptr->base.value.addr_mode = elem_ptr->arr_ptr->value.addr_mode;
 
 	reduce_instr(cnt, elem_ptr->arr_ptr);
@@ -4772,8 +4773,8 @@ analyze_instr_member_ptr(Context *cnt, MirInstrMemberPtr *member_ptr)
 			analyze_instr_rq(cnt, index);
 			analyze_instr_rq(cnt, elem_ptr);
 
-			MirInstrAddrOf *addrof_elem =
-			    (MirInstrAddrOf *)mutate_instr(&member_ptr->base, MIR_INSTR_ADDROF);
+			MirInstrAddrof *addrof_elem =
+			    (MirInstrAddrof *)mutate_instr(&member_ptr->base, MIR_INSTR_ADDROF);
 			addrof_elem->src = elem_ptr;
 			analyze_instr_rq(cnt, &addrof_elem->base);
 		} else {
@@ -4910,7 +4911,7 @@ INVALID:
 }
 
 AnalyzeResult
-analyze_instr_addrof(Context *cnt, MirInstrAddrOf *addrof)
+analyze_instr_addrof(Context *cnt, MirInstrAddrof *addrof)
 {
 	MirInstr *src = addrof->src;
 	BL_ASSERT(src);
@@ -4938,15 +4939,12 @@ analyze_instr_addrof(Context *cnt, MirInstrAddrOf *addrof)
 		type = src->value.type;
 	}
 
+	reduce_instr(cnt, addrof->src);
+
 	addrof->base.value.type      = type;
 	addrof->base.comptime        = addrof->src->comptime;
 	addrof->base.value.addr_mode = MIR_VAM_LVALUE_CONST;
 	BL_ASSERT(addrof->base.value.type && "invalid type");
-
-	reduce_instr(cnt, addrof->src);
-
-	if (addrof->base.comptime) {
-	}
 
 	return ANALYZE_RESULT(PASSED, 0);
 }
@@ -5010,19 +5008,10 @@ analyze_instr_sizeof(Context *cnt, MirInstrSizeof *szof)
 		return ANALYZE_RESULT(FAILED, 0);
 	}
 
-	MirType *type = szof->expr->value.type;
-	BL_ASSERT(type);
-
-	if (type->kind == MIR_TYPE_TYPE) {
-		type = mir_get_const_ptr(MirType *, &szof->expr->value.data.v_ptr, MIR_CP_TYPE);
-		BL_ASSERT(type);
-	}
-
 	/* sizeof operator needs only type of input expression so we can erase whole call
 	 * tree generated to get this expression */
 	unref_instr(szof->expr);
 	erase_instr_tree(szof->expr);
-	szof->base.value.data.v_u64 = type->store_size_bytes;
 	return ANALYZE_RESULT(PASSED, 0);
 }
 
@@ -5067,15 +5056,6 @@ analyze_instr_alignof(Context *cnt, MirInstrAlignof *alof)
 		return ANALYZE_RESULT(FAILED, 0);
 	}
 
-	MirType *type = alof->expr->value.type;
-	BL_ASSERT(type);
-
-	if (type->kind == MIR_TYPE_TYPE) {
-		type = mir_get_const_ptr(MirType *, &alof->expr->value.data.v_ptr, MIR_CP_TYPE);
-		BL_ASSERT(type);
-	}
-
-	alof->base.value.data.v_s32 = type->alignment;
 	return ANALYZE_RESULT(PASSED, 0);
 }
 
@@ -6840,7 +6820,7 @@ analyze_instr(Context *cnt, MirInstr *instr)
 		state = analyze_instr_member_ptr(cnt, (MirInstrMemberPtr *)instr);
 		break;
 	case MIR_INSTR_ADDROF:
-		state = analyze_instr_addrof(cnt, (MirInstrAddrOf *)instr);
+		state = analyze_instr_addrof(cnt, (MirInstrAddrof *)instr);
 		break;
 	case MIR_INSTR_CAST:
 		state = analyze_instr_cast(cnt, (MirInstrCast *)instr, false);

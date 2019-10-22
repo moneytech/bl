@@ -74,6 +74,9 @@ vm_terminate(VM *vm);
 void
 vm_execute_instr(VM *vm, struct MirInstr *instr);
 
+void
+vm_eval_comptime_instr(struct MirInstr *instr);
+
 bool
 vm_execute_instr_top_level_call(VM *vm, struct MirInstrCall *call);
 

@@ -154,7 +154,7 @@ static void
 emit_instr_cast(Context *cnt, MirInstrCast *cast);
 
 static void
-emit_instr_addrof(Context *cnt, MirInstrAddrOf *addrof);
+emit_instr_addrof(Context *cnt, MirInstrAddrof *addrof);
 
 static void
 emit_instr_unop(Context *cnt, MirInstrUnop *unop);
@@ -612,7 +612,7 @@ emit_instr_cast(Context *cnt, MirInstrCast *cast)
 }
 
 void
-emit_instr_addrof(Context *cnt, MirInstrAddrOf *addrof)
+emit_instr_addrof(Context *cnt, MirInstrAddrof *addrof)
 {
 	addrof->base.llvm_value = addrof->src->llvm_value;
 	BL_ASSERT(addrof->base.llvm_value)
@@ -1832,7 +1832,7 @@ emit_instr(Context *cnt, MirInstr *instr)
 		emit_instr_elem_ptr(cnt, (MirInstrElemPtr *)instr);
 		break;
 	case MIR_INSTR_ADDROF:
-		emit_instr_addrof(cnt, (MirInstrAddrOf *)instr);
+		emit_instr_addrof(cnt, (MirInstrAddrof *)instr);
 		break;
 	case MIR_INSTR_CAST:
 		emit_instr_cast(cnt, (MirInstrCast *)instr);

@@ -69,7 +69,7 @@ typedef struct MirInstrBinop         MirInstrBinop;
 typedef struct MirInstrUnop          MirInstrUnop;
 typedef struct MirInstrFnProto       MirInstrFnProto;
 typedef struct MirInstrCall          MirInstrCall;
-typedef struct MirInstrAddrOf        MirInstrAddrOf;
+typedef struct MirInstrAddrof        MirInstrAddrof;
 typedef struct MirInstrCondBr        MirInstrCondBr;
 typedef struct MirInstrBr            MirInstrBr;
 typedef struct MirInstrArg           MirInstrArg;
@@ -540,7 +540,7 @@ struct MirInstrStore {
 	MirInstr *dest;
 };
 
-struct MirInstrAddrOf {
+struct MirInstrAddrof {
 	MirInstr base;
 
 	MirInstr *src;

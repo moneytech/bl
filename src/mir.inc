@@ -21,7 +21,7 @@
 	MirInstrArg           arg;\
 	MirInstrElemPtr       elem_ptr;\
 	MirInstrMemberPtr     member_ptr;\
-	MirInstrAddrOf        addrof;\
+	MirInstrAddrof        addrof;\
 	MirInstrTypeArray     type_array;\
 	MirInstrTypeSlice     type_slice;\
 	MirInstrTypeVArgs     type_vargs;\
