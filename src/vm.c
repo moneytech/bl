@@ -1541,7 +1541,7 @@ interp_instr(VM *vm, MirInstr *instr)
 	}
 
 	/* INCOMPLETE: enable this after completed evaluation */
-	/*
+	/* INCOMPLETE: problems with compounds
 	if (instr->comptime) {
 	        BL_ABORT("Instruction '%s' is comptime!", mir_instr_name(instr));
 	}
@@ -1779,15 +1779,17 @@ interp_instr_elem_ptr(VM *vm, MirInstrElemPtr *elem_ptr)
 	VMStackPtr arr_ptr    = fetch_value(vm, elem_ptr->arr_ptr);
 	arr_ptr               = ((MirConstValueData *)arr_ptr)->v_ptr.data.stack_ptr;
 
+	const bool arr_is_comptime = elem_ptr->arr_ptr->comptime;
+
 	VMStackPtr result = NULL;
 	BL_ASSERT(arr_ptr && index_ptr);
-	BL_ASSERT(!elem_ptr->arr_ptr->comptime && "Missing comptime elem_ptr interpretation!");
 
 	MirConstValueData index = {0};
 	read_value(&index, index_ptr, index_type);
 
 	/* Slice */
 	if (elem_ptr->target_is_slice) {
+		BL_ASSERT(!arr_is_comptime && "Missing comptime elem_ptr interpretation!");
 		MirType *len_type = mir_get_struct_elem_type(arr_type, MIR_SLICE_LEN_INDEX);
 		MirType *ptr_type = mir_get_struct_elem_type(arr_type, MIR_SLICE_PTR_INDEX);
 
@@ -1847,10 +1849,19 @@ interp_instr_elem_ptr(VM *vm, MirInstrElemPtr *elem_ptr)
 		}
 	}
 
-	result = (VMStackPtr)((arr_ptr) + (index.v_u64 * elem_type->store_size_bytes));
+	if (arr_is_comptime) {
+		VMStackPtr     tmp           = push_stack_empty(vm, elem_ptr->base.value.type);
+		MirConstValue *arr_ptr_value = (MirConstValue *)arr_ptr;
+		MirConstValue *data          = arr_ptr_value->data.v_array.elems->data[index.v_s64];
 
-	/* push result address on the stack */
-	push_stack(vm, &result, elem_ptr->base.value.type);
+		//copy_comptime_to_stack(vm, tmp, data);
+		push_stack(vm, &data, elem_ptr->base.value.type);
+	} else {
+		result = (VMStackPtr)((arr_ptr) + (index.v_u64 * elem_type->store_size_bytes));
+
+		/* push result address on the stack */
+		push_stack(vm, &result, elem_ptr->base.value.type);
+	}
 }
 
 void
@@ -2572,7 +2583,8 @@ eval_instr_member_ptr(MirInstrMemberPtr *member_ptr)
 	MirType *      target_type  = member_ptr->target_ptr->value.type;
 
 	if (mir_is_pointer_type(target_type)) {
-		target_type = mir_deref_type(target_type);
+		target_type  = mir_deref_type(target_type);
+		target_value = target_value->data.v_ptr.data.any;
 	}
 
 	switch (target_type->kind) {
@@ -2597,11 +2609,10 @@ eval_instr_member_ptr(MirInstrMemberPtr *member_ptr)
 
 		MirMember *member = member_ptr->scope_entry->data.member;
 		BL_ASSERT(member);
-
 		const s64 index = member->index;
 
 		MirConstValue *result = target_value->data.v_struct.members->data[index];
-		mir_set_const_ptr(&member_ptr->base.value.data.v_ptr, &result, MIR_CP_VALUE);
+		mir_set_const_ptr(&member_ptr->base.value.data.v_ptr, result, MIR_CP_VALUE);
 		break;
 	}
 
