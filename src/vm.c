@@ -1419,6 +1419,7 @@ interp_instr_elem_ptr(VM *vm, MirInstrElemPtr *elem_ptr)
 	MirConstValueData index = {0};
 	read_value(&index, index_ptr, index_type);
 
+	/* Slice */
 	if (elem_ptr->target_is_slice) {
 		BL_ASSERT(!comptime && "Missing implementation for elem_ptr on comptime slice!");
 		MirType *len_type = mir_get_struct_elem_type(arr_type, MIR_SLICE_LEN_INDEX);
@@ -1461,35 +1462,36 @@ interp_instr_elem_ptr(VM *vm, MirInstrElemPtr *elem_ptr)
 		/* push result address on the stack */
 		push_stack(vm, &result, elem_ptr->base.value.type);
 		return;
-	} else {
-		MirType *elem_type = arr_type->data.array.elem_type;
-		BL_ASSERT(elem_type);
-
-		{ /* Check ranges. */
-			const s64 len = arr_type->data.array.len;
-			if (index.v_s64 >= len) {
-				msg_error("Array index is out of the bounds! Array index "
-				          "is: %lli, "
-				          "but array size "
-				          "is: %lli",
-				          (long long)index.v_s64,
-				          (long long)len);
-				exec_abort(vm, 0);
-			}
-		}
-
-		if (comptime) {
-			MirConstValue *arr_ptr_val = (MirConstValue *)arr_ptr;
-			result = (VMStackPtr)arr_ptr_val->data.v_array.elems->data[index.v_u64];
-			mir_set_const_ptr(&elem_ptr->base.value.data.v_ptr, result, MIR_CP_VALUE);
-			return;
-		}
-
-		result = (VMStackPtr)((arr_ptr) + (index.v_u64 * elem_type->store_size_bytes));
-
-		/* push result address on the stack */
-		push_stack(vm, &result, elem_ptr->base.value.type);
 	}
+
+	/* Array */
+	MirType *elem_type = arr_type->data.array.elem_type;
+	BL_ASSERT(elem_type);
+
+	{ /* Check ranges. */
+		const s64 len = arr_type->data.array.len;
+		if (index.v_s64 >= len) {
+			msg_error("Array index is out of the bounds! Array index "
+			          "is: %lli, "
+			          "but array size "
+			          "is: %lli",
+			          (long long)index.v_s64,
+			          (long long)len);
+			exec_abort(vm, 0);
+		}
+	}
+
+	if (comptime) {
+		MirConstValue *arr_ptr_val = (MirConstValue *)arr_ptr;
+		result = (VMStackPtr)arr_ptr_val->data.v_array.elems->data[index.v_u64];
+		mir_set_const_ptr(&elem_ptr->base.value.data.v_ptr, result, MIR_CP_VALUE);
+		return;
+	}
+
+	result = (VMStackPtr)((arr_ptr) + (index.v_u64 * elem_type->store_size_bytes));
+
+	/* push result address on the stack */
+	push_stack(vm, &result, elem_ptr->base.value.type);
 }
 
 void
