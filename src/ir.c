@@ -297,7 +297,7 @@ fetch_value(Context *cnt, MirInstr *instr)
 {
 	LLVMValueRef value = NULL;
 
-	if (instr->comptime && !instr->llvm_value) {
+	if (instr->eval_mode == MIR_VEM_COMPTIME && !instr->llvm_value) {
 		/* Declaration references must be generated even if they are compile time. */
 		if (instr->kind == MIR_INSTR_DECL_REF) {
 			emit_instr_decl_ref(cnt, (MirInstrDeclRef *)instr);
@@ -1037,7 +1037,7 @@ emit_instr_unop(Context *cnt, MirInstrUnop *unop)
 void
 emit_instr_compound(Context *cnt, MirVar *_tmp_var, MirInstrCompound *cmp)
 {
-	if (cmp->base.comptime && !_tmp_var) {
+	if (cmp->base.eval_mode == MIR_VEM_COMPTIME && !_tmp_var) {
 		cmp->base.llvm_value = emit_as_const(cnt, &cmp->base.value);
 		return;
 	}
@@ -1071,7 +1071,7 @@ emit_instr_compound(Context *cnt, MirVar *_tmp_var, MirInstrCompound *cmp)
 	if (cmp->is_zero_initialized) {
 		/* zero initialized */
 		build_call_memset_0(cnt, llvm_tmp, llvm_size, llvm_alignment);
-	} else if (cmp->base.comptime) {
+	} else if (cmp->base.eval_mode == MIR_VEM_COMPTIME) {
 		/* compile time known */
 		LLVMTypeRef llvm_type = type->llvm_type;
 		BL_ASSERT(llvm_type)

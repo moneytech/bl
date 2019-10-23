@@ -9,32 +9,40 @@ BAR :: {:T: 10, 20};
 ARR :: {:[2]s32: 10, 20};
 FOO :: BAR.j;
 
-digits :: {:[16]u8: '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f' };
-
+digits :: {:[10]u8: '0', '1', '2', '3', '4', '5', '6', '7', '8', '9' };
 foos :: {:[2]T: {:T: 10, 20}, {:T: 30, 40}};
 
+ARR_PTR :: &ARR;
+
+A :: 10;
+B :: 20;
+
+AB_PTR :: {:[2]*s32: &A, &B};
+
 main :: fn () s32 {
+
     loop i := 0; i < digits.len; i += 1 {
         print("% ", digits[i]);
     }
+
     print("\n");
 
     loop i := 0; i < foos.len; i += 1 {
-        print("% ", foos[i]);
+        tmp := foos[i];
+        print("% ", tmp);
     }
     print("\n");
-    
-    /*
-    a := &foos[1];
-    print("address = %\n", a);
-*/
 
-    i := -FOO;
-    print("i = %\n", i);
+    tmp1 := ARR_PTR;
+    tmp2 := &ARR;
+    print("ARR_PTR = %\n", tmp1);
+    print("&ARR    = %\n", tmp2);
 
-    ptr :: &FOO;
-    i = ^ptr;
-    print("ptr = %\n", i);
+    loop i := 0; i < AB_PTR.len; i += 1 {
+        tmp := ^AB_PTR[i];
+        print("% ", tmp);
+    }
+    print("\n");
 
     return 0;
 }

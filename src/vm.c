@@ -452,7 +452,7 @@ read_stack_ptr(VM *vm, VMRelativeStackPtr rel_ptr, bool ignore)
 static inline VMStackPtr
 fetch_value(VM *vm, MirInstr *src)
 {
-	if (src->comptime || src->kind == MIR_INSTR_DECL_REF ||
+	if (src->eval_mode == MIR_VEM_COMPTIME || src->kind == MIR_INSTR_DECL_REF ||
 	    src->kind == MIR_INSTR_DECL_DIRECT_REF) {
 		return (VMStackPtr)&src->value.data;
 	}
@@ -1166,7 +1166,7 @@ _execute_fn_top_level(VM *                    vm,
 
 	const bool does_return_value    = ret_type->kind != MIR_TYPE_VOID;
 	const bool is_return_value_used = call ? call->ref_count > 1 : true;
-	const bool is_caller_comptime   = call ? call->comptime : false;
+	const bool is_caller_comptime   = call ? call->eval_mode == MIR_VEM_COMPTIME : false;
 	const bool pop_return_value =
 	    does_return_value && is_return_value_used && !is_caller_comptime;
 	const usize argc = args ? args->size : 0;
@@ -1676,7 +1676,7 @@ interp_instr_toany(VM *vm, MirInstrToAny *toany)
 		VMStackPtr expr_tmp_ptr =
 		    read_stack_ptr(vm, expr_tmp->rel_stack_ptr, expr_tmp->is_in_gscope);
 
-		if (toany->expr->comptime) {
+		if (toany->expr->eval_mode == MIR_VEM_COMPTIME) {
 			copy_comptime_to_stack(vm, expr_tmp_ptr, (MirConstValue *)data_ptr);
 		} else {
 			memcpy(expr_tmp_ptr, data_ptr, data_type->store_size_bytes);
@@ -1721,7 +1721,7 @@ interp_instr_phi(VM *vm, MirInstrPhi *phi)
 
 		VMStackPtr value_ptr = fetch_value(vm, value);
 
-		if (phi->base.comptime) {
+		if (phi->base.eval_mode == MIR_VEM_COMPTIME) {
 			memcpy(&phi->base.value.data, value_ptr, sizeof(phi->base.value.data));
 		} else {
 			push_stack(vm, value_ptr, phi_type);
@@ -1779,8 +1779,6 @@ interp_instr_elem_ptr(VM *vm, MirInstrElemPtr *elem_ptr)
 	VMStackPtr arr_ptr    = fetch_value(vm, elem_ptr->arr_ptr);
 	arr_ptr               = ((MirConstValueData *)arr_ptr)->v_ptr.data.stack_ptr;
 
-	const bool arr_is_comptime = elem_ptr->arr_ptr->comptime;
-
 	VMStackPtr result = NULL;
 	BL_ASSERT(arr_ptr && index_ptr);
 
@@ -1789,7 +1787,8 @@ interp_instr_elem_ptr(VM *vm, MirInstrElemPtr *elem_ptr)
 
 	/* Slice */
 	if (elem_ptr->target_is_slice) {
-		BL_ASSERT(!arr_is_comptime && "Missing comptime elem_ptr interpretation!");
+		BL_ASSERT(elem_ptr->arr_ptr->eval_mode != MIR_VEM_COMPTIME &&
+		          "Missing comptime elem_ptr interpretation!");
 		MirType *len_type = mir_get_struct_elem_type(arr_type, MIR_SLICE_LEN_INDEX);
 		MirType *ptr_type = mir_get_struct_elem_type(arr_type, MIR_SLICE_PTR_INDEX);
 
@@ -1849,19 +1848,15 @@ interp_instr_elem_ptr(VM *vm, MirInstrElemPtr *elem_ptr)
 		}
 	}
 
-	if (arr_is_comptime) {
-		VMStackPtr     tmp           = push_stack_empty(vm, elem_ptr->base.value.type);
+	if (elem_ptr->arr_ptr->eval_mode != MIR_VEM_RUNTIME) {
 		MirConstValue *arr_ptr_value = (MirConstValue *)arr_ptr;
-		MirConstValue *data          = arr_ptr_value->data.v_array.elems->data[index.v_s64];
-
-		//copy_comptime_to_stack(vm, tmp, data);
-		push_stack(vm, &data, elem_ptr->base.value.type);
+		result = (VMStackPtr)arr_ptr_value->data.v_array.elems->data[index.v_s64];
 	} else {
 		result = (VMStackPtr)((arr_ptr) + (index.v_u64 * elem_type->store_size_bytes));
-
-		/* push result address on the stack */
-		push_stack(vm, &result, elem_ptr->base.value.type);
 	}
+
+	/* push result address on the stack */
+	push_stack(vm, &result, elem_ptr->base.value.type);
 }
 
 void
@@ -1869,7 +1864,7 @@ interp_instr_member_ptr(VM *vm, MirInstrMemberPtr *member_ptr)
 {
 	BL_ASSERT(member_ptr->target_ptr);
 	MirType *  target_type = member_ptr->target_ptr->value.type;
-	const bool comptime    = member_ptr->base.comptime;
+	const bool comptime    = member_ptr->base.eval_mode == MIR_VEM_COMPTIME;
 
 	/* fetch address of the struct begin */
 	VMStackPtr ptr = fetch_value(vm, member_ptr->target_ptr);
@@ -2033,7 +2028,7 @@ interp_instr_arg(VM *vm, MirInstrArg *arg)
 		BL_ASSERT(arg_values);
 		MirInstr *curr_arg_value = arg_values->data[arg->i];
 
-		if (curr_arg_value->comptime) {
+		if (curr_arg_value->eval_mode == MIR_VEM_COMPTIME) {
 			MirType *  type = curr_arg_value->value.type;
 			VMStackPtr dest = push_stack_empty(vm, type);
 
@@ -2048,7 +2043,7 @@ interp_instr_arg(VM *vm, MirInstrArg *arg)
 			for (u32 i = 0; i <= arg->i; ++i) {
 				arg_value = arg_values->data[i];
 				BL_ASSERT(arg_value);
-				if (arg_value->comptime) continue;
+				if (arg_value->eval_mode == MIR_VEM_COMPTIME) continue;
 				arg_ptr -=
 				    stack_alloc_size(arg_value->value.type->store_size_bytes);
 			}
@@ -2152,7 +2147,7 @@ interp_instr_decl_direct_ref(VM *vm, MirInstrDeclDirectRef *ref)
 void
 interp_instr_compound(VM *vm, VMStackPtr tmp_ptr, MirInstrCompound *cmp)
 {
-	if (cmp->base.comptime) {
+	if (cmp->base.eval_mode == MIR_VEM_COMPTIME) {
 		/* non-naked */
 		if (tmp_ptr) copy_comptime_to_stack(vm, tmp_ptr, &cmp->base.value);
 		return;
@@ -2192,7 +2187,7 @@ interp_instr_compound(VM *vm, VMStackPtr tmp_ptr, MirInstrCompound *cmp)
 			BL_ASSERT(i == 0 && "Invalid elem count for non-agregate type!!!");
 		}
 
-		if (value->comptime) {
+		if (value->eval_mode == MIR_VEM_COMPTIME) {
 			copy_comptime_to_stack(vm, elem_ptr, &value->value);
 		} else {
 			if (value->kind == MIR_INSTR_COMPOUND) {
@@ -2229,7 +2224,7 @@ interp_instr_vargs(VM *vm, MirInstrVArgs *vargs)
 			const usize value_size = value->value.type->store_size_bytes;
 			VMStackPtr  dest       = arr_tmp_ptr + i * value_size;
 
-			if (value->comptime) {
+			if (value->eval_mode == MIR_VEM_COMPTIME) {
 				copy_comptime_to_stack(vm, dest, &value->value);
 			} else {
 				value_ptr = fetch_value(vm, value);
@@ -2300,7 +2295,8 @@ interp_instr_decl_var(VM *vm, MirInstrDeclVar *decl)
 		VMStackPtr var_ptr = read_stack_ptr(vm, var->rel_stack_ptr, use_static_segment);
 		BL_ASSERT(var_ptr);
 
-		if (decl->init->comptime) {
+		if (decl->init->eval_mode == MIR_VEM_COMPTIME ||
+		    decl->init->eval_mode == MIR_VEM_MIXED) {
 			/* Compile time constants of agregate type are stored in different
 			 * way, we need to produce decomposition of those data. */
 			copy_comptime_to_stack(vm, var_ptr, &decl->init->value);
@@ -2334,7 +2330,14 @@ interp_instr_load(VM *vm, MirInstrLoad *load)
 	}
 
 	src_ptr = ((MirConstValueData *)src_ptr)->v_ptr.data.stack_ptr;
-	push_stack(vm, src_ptr, dest_type);
+
+	if (load->src->eval_mode == MIR_VEM_MIXED) {
+		MirConstValue *src_ptr_value = (MirConstValue *)src_ptr;
+		VMStackPtr     dest_ptr      = push_stack_empty(vm, dest_type);
+		copy_comptime_to_stack(vm, dest_ptr, src_ptr_value);
+	} else {
+		push_stack(vm, src_ptr, dest_type);
+	}
 }
 
 void
@@ -2352,7 +2355,7 @@ interp_instr_store(VM *vm, MirInstrStore *store)
 	dest_ptr = ((MirConstValueData *)dest_ptr)->v_ptr.data.stack_ptr;
 
 	BL_ASSERT(dest_ptr && src_ptr);
-	if (store->src->comptime) {
+	if (store->src->eval_mode == MIR_VEM_COMPTIME) {
 		copy_comptime_to_stack(vm, dest_ptr, &store->src->value);
 	} else {
 		memcpy(dest_ptr, src_ptr, src_type->store_size_bytes);
@@ -2434,7 +2437,7 @@ interp_instr_ret(VM *vm, MirInstrRet *ret)
 			MirInstr *arg_value;
 			TSA_FOREACH(arg_values, arg_value)
 			{
-				if (arg_value->comptime) continue;
+				if (arg_value->eval_mode == MIR_VEM_COMPTIME) continue;
 				pop_stack(vm, arg_value->value.type);
 			}
 		}
@@ -2457,15 +2460,16 @@ interp_instr_ret(VM *vm, MirInstrRet *ret)
 	if (ret_data_ptr) {
 		/* Determinate if caller instruction is comptime, if caller does not exist we are
 		 * going to push result on the stack. */
-		const bool is_caller_comptime = caller ? caller->base.comptime : false;
+		const bool is_caller_comptime =
+		    caller ? caller->base.eval_mode == MIR_VEM_COMPTIME : false;
 		if (is_caller_comptime) {
-			if (ret->value->comptime) {
+			if (ret->value->eval_mode == MIR_VEM_COMPTIME) {
 				caller->base.value.data = ret->value->value.data;
 			} else {
 				read_value(&caller->base.value.data, ret_data_ptr, ret_type);
 			}
 		} else {
-			if (ret->value->comptime) {
+			if (ret->value->eval_mode == MIR_VEM_COMPTIME) {
 				VMStackPtr dest = push_stack_empty(vm, ret_type);
 				copy_comptime_to_stack(vm, dest, &ret->value->value);
 			} else {
@@ -2525,7 +2529,7 @@ eval_instr(MirInstr *instr)
 		BL_ABORT("Instruction '%s' has not been analyzed!", mir_instr_name(instr));
 	}
 
-	if (!instr->comptime) {
+	if (instr->eval_mode != MIR_VEM_COMPTIME) {
 		BL_ABORT("Evaluated '%s' instruction must be comptime!", mir_instr_name(instr));
 	}
 
@@ -2627,11 +2631,14 @@ eval_instr_elem_ptr(MirInstrElemPtr *elem_ptr)
 	/* This is more complicated, element pointer is constant expression only when target pointer
 	 * and index are constants. */
 	BL_ASSERT(mir_is_pointer_type(elem_ptr->arr_ptr->value.type));
-	BL_ASSERT(elem_ptr->index->comptime && "Array index must be comptime!");
+	BL_ASSERT(elem_ptr->index->eval_mode == MIR_VEM_COMPTIME &&
+	          "Array index must be comptime!");
 
 	MirType *      arr_type      = mir_deref_type(elem_ptr->arr_ptr->value.type);
 	MirConstValue *arr_ptr_value = &elem_ptr->arr_ptr->value;
-	const s64      index         = elem_ptr->index->value.data.v_s64;
+	arr_ptr_value                = mir_get_const_ptr(
+            MirConstValue *, &arr_ptr_value->data.v_ptr, MIR_CP_VALUE | MIR_CP_VAR);
+	const s64 index = elem_ptr->index->value.data.v_s64;
 
 	if (elem_ptr->target_is_slice) {
 		BL_UNIMPLEMENTED;
@@ -2783,7 +2790,8 @@ vm_execute_instr_top_level_call(VM *vm, MirInstrCall *call)
 {
 	BL_ASSERT(call && call->base.analyzed);
 
-	assert(call->base.comptime && "Top level call is expected to be comptime.");
+	assert(call->base.eval_mode == MIR_VEM_COMPTIME &&
+	       "Top level call is expected to be comptime.");
 	if (call->args) BL_ABORT("exec call top level has not implemented passing of arguments");
 
 	return execute_fn_top_level(vm, &call->base, NULL);
