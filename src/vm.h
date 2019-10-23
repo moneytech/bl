@@ -41,7 +41,7 @@ struct Assembly;
 struct MirVar;
 struct MirConstValue;
 
-typedef ptrdiff_t VMRelativeStackPtr;
+typedef ptrdiff_t VMRelStackPtr;
 typedef u8 *      VMStackPtr;
 
 typedef struct VMFrame {
