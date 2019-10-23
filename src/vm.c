@@ -437,7 +437,7 @@ pop_stack(VM *vm, MirType *type)
  * use relative pointer. When we set ignore to true original pointer is returned
  * as absolute pointer to the stack.  */
 static inline VMStackPtr
-read_stack_ptr(VM *vm, VMRelativeStackPtr rel_ptr, bool ignore)
+read_stack_ptr(VM *vm, VMRelStackPtr rel_ptr, bool ignore)
 {
 	if (ignore) return (VMStackPtr)rel_ptr;
 	BL_ASSERT(rel_ptr);
@@ -513,7 +513,7 @@ set_pc(VM *vm, MirInstr *instr)
 	vm->stack->pc = instr;
 }
 
-static inline VMRelativeStackPtr
+static inline VMRelStackPtr
 stack_alloc_var(VM *vm, MirVar *var)
 {
 	BL_ASSERT(var);
@@ -2804,7 +2804,7 @@ vm_create_global(VM *vm, struct MirInstrDeclVar *decl)
 	BL_ASSERT(var);
 	BL_ASSERT(var->is_in_gscope && "Allocated variable is supposed to be global variable.");
 
-	VMRelativeStackPtr var_ptr = stack_alloc_var(vm, var);
+	VMRelStackPtr var_ptr = stack_alloc_var(vm, var);
 	interp_instr_decl_var(vm, decl);
 
 	/* HACK: we can ignore relative pointers for globals. */

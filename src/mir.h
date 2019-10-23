@@ -351,13 +351,13 @@ struct MirType {
 
 struct MirConstPtr {
 	union {
-		MirType *          type;          /* type value */
-		MirConstValue *    value;         /* remove */
-		MirFn *            fn;            /* function */
-		MirVar *           var;           /* variable */
-		VMStackPtr         stack_ptr;     /* absolute pointer to the stack */
-		VMRelativeStackPtr rel_stack_ptr; /* relative pointer to the stack */
-		const char *       str;           /* constant string array */
+		MirType *      type;          /* type value */
+		MirConstValue *value;         /* remove */
+		MirFn *        fn;            /* function */
+		MirVar *       var;           /* variable */
+		VMStackPtr     stack_ptr;     /* absolute pointer to the stack */
+		VMRelStackPtr  rel_stack_ptr; /* relative pointer to the stack */
+		const char *   str;           /* constant string array */
 
 		void *any; /* universal pointer value */
 	} data;
@@ -409,20 +409,20 @@ struct MirVariant {
 
 /* VAR */
 struct MirVar {
-	MirConstValue      value; /* contains also allocated type */
-	ID *               id;
-	Ast *              decl_node;
-	Scope *            decl_scope;
-	s32                ref_count;
-	bool               is_mutable;
-	bool               comptime;
-	bool               is_in_gscope;
-	bool               is_implicit;
-	bool               gen_llvm;
-	u32                flags;
-	VMRelativeStackPtr rel_stack_ptr;
-	LLVMValueRef       llvm_value;
-	const char *       llvm_name;
+	MirConstValue value; /* contains also allocated type */
+	ID *          id;
+	Ast *         decl_node;
+	Scope *       decl_scope;
+	s32           ref_count;
+	bool          is_mutable;
+	bool          comptime;
+	bool          is_in_gscope;
+	bool          is_implicit;
+	bool          gen_llvm;
+	u32           flags;
+	VMRelStackPtr rel_stack_ptr;
+	LLVMValueRef  llvm_value;
+	const char *  llvm_name;
 };
 
 struct MirInstr {
