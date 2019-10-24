@@ -4432,7 +4432,6 @@ analyze_instr_phi(Context *cnt, MirInstrPhi *phi)
 
 	const usize count = phi->incoming_values->size;
 
-	bool       comptime = true;
 	MirInstr **value_ref;
 	MirInstr * block;
 	MirType *  type = NULL;
@@ -4449,14 +4448,15 @@ analyze_instr_phi(Context *cnt, MirInstrPhi *phi)
 			return ANALYZE_RESULT(FAILED, 0);
 
 		if (!type) type = (*value_ref)->value.type;
-
-		comptime &= (*value_ref)->eval_mode == MIR_VEM_COMPTIME;
 	}
 
 	BL_ASSERT(type && "Cannot resolve type of phi instruction!");
 	phi->base.value.type      = type;
 	phi->base.value.addr_mode = MIR_VAM_RVALUE;
-	phi->base.eval_mode       = comptime ? MIR_VEM_COMPTIME : MIR_VEM_RUNTIME;
+
+	/* INCOMPLETE: comptime phi? */
+	phi->base.value.eval_mode = _MIR_VEM_RUNTIME;
+	phi->base.eval_mode       = MIR_VEM_RUNTIME;
 
 	return ANALYZE_RESULT(PASSED, 0);
 }
@@ -4497,6 +4497,7 @@ analyze_instr_compound(Context *cnt, MirInstrCompound *cmp)
 	}
 
 	cmp->base.value.type = type;
+	cmp->base.value.eval_mode = MIR_VEM_LAZY;
 	cmp->base.eval_mode  = MIR_VEM_COMPTIME; /* can be overriden later */
 
 	/* Check if array is supposed to be initilialized to {0} */
