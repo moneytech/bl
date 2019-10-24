@@ -154,14 +154,34 @@ typedef enum MirConstPtrKind {
 typedef enum MirValueAddressMode {
 	/* Value points to memory allocation on the stack or heap. */
 	MIR_VAM_LVALUE,
+
 	/* Value points to memeory allocation on the stack or heap but value itself is immutable and
 	   cannot be modified. */
 	MIR_VAM_LVALUE_CONST,
+
 	/* Does not point to allocated memory (ex: const literals). */
 	MIR_VAM_RVALUE,
 } MirValueAddressMode;
 
-/* External function arguments passing composit types by value needs special handling in IR. */
+typedef enum MirValueEvaluationMode {
+	MIR_VEM_INVALID,
+
+	/* Value can be evaluated only in runtime. */
+	_MIR_VEM_RUNTIME,
+
+	/* Value is static comptime primitive type stored in const expression value data. Conversion
+	   from comptime to runtime can be done without any additional operation needed. */
+	MIR_VEM_STATIC,
+
+	/* Value is comptime of composit or array type, such value cannot be directly converted from
+	   comptime to runtime, interpreter must make allocation in cache once when value is first
+	   used as runtime value. */
+	MIR_VEM_LAZY,
+} MirValueEvaluationMode;
+
+/* External function arguments passing composit types by value needs special handling in IR
+ * according to System V UNIX call convetions. (I'm not sure if this is needed on Windows + MSVC
+ * compiled dlls) */
 typedef enum LLVMExternArgStructGenerationMode {
 	LLVM_EASGM_NONE,  /* No special handling */
 	LLVM_EASGM_8,     /* Promote composit as i8 */
@@ -398,6 +418,11 @@ struct MirConstValue {
 	union MirConstValueData data; /* data must be first!!! */
 	MirType *               type;
 	MirValueAddressMode     addr_mode;
+	MirValueEvaluationMode  eval_mode;
+
+	/* Pointer to stack allocation needed for conversion of comptime lazy evaluated values to
+	 * runtime values. */
+	VMStackPtr *tmp;
 };
 
 /* VARIANT */
@@ -792,6 +817,13 @@ _mir_get_const_ptr(MirConstPtr *value, u32 valid_kind)
 {
 	BL_ASSERT(value->kind & valid_kind && "Unexpected const pointer type!");
 	return value->data.any;
+}
+
+static inline bool
+mir_is_comptime(MirInstr *instr)
+{
+	BL_ASSERT(instr->value.eval_mode != MIR_VEM_INVALID && "Evaluation mode is invalid!");
+	return instr->value.eval_mode != MIR_VEM_RUNTIME;
 }
 
 ptrdiff_t

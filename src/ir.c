@@ -842,6 +842,11 @@ emit_as_const(Context *cnt, MirConstValue *value)
 		break;
 
 	case MIR_TYPE_PTR: {
+		if (value->data.v_ptr.data.any == NULL) {
+			llvm_value = LLVMConstNull(llvm_type);
+			break;
+		}
+
 		type = mir_deref_type(type);
 		BL_ASSERT(type)
 
@@ -868,12 +873,12 @@ emit_as_const(Context *cnt, MirConstValue *value)
 			break;
 		}
 
-                case MIR_CP_VALUE: {
-                        MirConstValue *val = value->data.v_ptr.data.value;
-                        llvm_value = emit_as_const(cnt, val);
-                        BL_ASSERT(llvm_value)
-                        break;
-                }
+		case MIR_CP_VALUE: {
+			MirConstValue *val = value->data.v_ptr.data.value;
+			llvm_value         = emit_as_const(cnt, val);
+			BL_ASSERT(llvm_value)
+			break;
+		}
 
 		default: {
 			/* Only null constants are allowed here */
