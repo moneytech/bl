@@ -7,7 +7,7 @@ homo := 10;
 main :: fn () s32 {
     i := 10;
     i = 0;
-    //foo();
+    foo();
     return Bar;
 }
 
