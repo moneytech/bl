@@ -2078,10 +2078,20 @@ interp_instr_arg(VM *vm, MirInstrArg *arg)
 		MirInstr *curr_arg_value = arg_values->data[arg->i];
 
 		if (mir_is_comptime(&curr_arg_value->value)) {
-			MirType *  type = curr_arg_value->value.type;
-			VMStackPtr dest = push_stack_empty(vm, type);
+			/* Push pointer do comptime data to the stack. */
+			switch (curr_arg_value->value.eval_mode) {
+			case MIR_VEM_STATIC:
+				push_stack(
+				    vm, (VMStackPtr)&curr_arg_value->value, arg->base.value.type);
+				break;
 
-			copy_comptime_to_stack(vm, dest, &curr_arg_value->value);
+			case MIR_VEM_LAZY:
+				BL_UNIMPLEMENTED;
+				break;
+
+			default:
+				BL_ABORT("Invalid comptime evaluation mode!");
+			}
 		} else {
 			/* Arguments are located in reverse order right before return address on the
 			 * stack
@@ -2174,7 +2184,7 @@ interp_instr_decl_ref(VM *vm, MirInstrDeclRef *ref)
 		} else {
 			const bool use_static_segment = var->is_in_gscope;
 			VMStackPtr ptr = read_stack_ptr(vm, var->rel_stack_ptr, use_static_segment);
-			//mir_set_const_ptr(const_ptr, ptr, MIR_CP_STACK);
+			// mir_set_const_ptr(const_ptr, ptr, MIR_CP_STACK);
 
 			push_stack(vm, &ptr, ref->base.value.type);
 		}
@@ -2186,7 +2196,7 @@ interp_instr_decl_ref(VM *vm, MirInstrDeclRef *ref)
 	case SCOPE_ENTRY_TYPE:
 	case SCOPE_ENTRY_MEMBER:
 	case SCOPE_ENTRY_VARIANT:
-	        BL_ABORT("Should not happend!");
+		BL_ABORT("Should not happend!");
 		break;
 
 	default:

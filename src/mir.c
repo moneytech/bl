@@ -3406,8 +3406,9 @@ append_instr_type_vargs(Context *cnt, Ast *node, MirInstr *elem_type)
 MirInstr *
 append_instr_arg(Context *cnt, Ast *node, unsigned i)
 {
-	MirInstrArg *tmp = CREATE_INSTR(cnt, MIR_INSTR_ARG, node, MirInstrArg *);
-	tmp->i           = i;
+	MirInstrArg *tmp          = CREATE_INSTR(cnt, MIR_INSTR_ARG, node, MirInstrArg *);
+	tmp->base.value.eval_mode = MIR_VEM_RUNTIME;
+	tmp->i                    = i;
 
 	append_current_block(cnt, &tmp->base);
 	return &tmp->base;

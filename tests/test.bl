@@ -5,10 +5,15 @@ Bar :: Foo;
 homo := 10;
 
 main :: fn () s32 {
-    i := 10;
-    i = 0;
-    foo();
-    return Bar;
+    j := Foo + Bar + homo;
+
+    loop i := 0; i < 100; i += 1 {
+        j += 1;
+    }
+    
+    return j;
 }
 
-foo :: fn () {}
+foo :: fn (a: s32, b: s32) s32 {
+    return a + b;
+}
