@@ -1,9 +1,13 @@
 /* playground */
 
-Bar :: Foo;
 Foo :: 10 + 2;
+Bar :: Foo;
+homo := 10;
 
 main :: fn () s32 {
+    i := 10;
+    i = 0;
+    //foo();
     return Bar;
 }
 

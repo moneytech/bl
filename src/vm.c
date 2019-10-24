@@ -563,7 +563,7 @@ static inline VMRelStackPtr
 stack_alloc_var(VM *vm, MirVar *var)
 {
 	BL_ASSERT(var);
-	BL_ASSERT(!mir_is_comptime(&var->value) && "cannot allocate compile time constant");
+	BL_ASSERT(!var->is_comptime && "cannot allocate compile time constant");
 	/* allocate memory for variable on stack */
 
 	VMStackPtr tmp     = push_stack_empty(vm, var->value.type);
@@ -583,7 +583,7 @@ stack_alloc_local_vars(VM *vm, MirFn *fn)
 		/* Compile time variables does not require stack allocations in general. When
 		 * variable's value is evaluated in LAZY mode it will create temporary stack
 		 * allocation on first use, containing copy of the const expression value. */
-		if (mir_is_comptime(&var->value)) continue;
+		if (var->is_comptime) continue;
 		stack_alloc_var(vm, var);
 	}
 }
@@ -2157,12 +2157,26 @@ interp_instr_decl_ref(VM *vm, MirInstrDeclRef *ref)
 
 		MirConstPtr *const_ptr = &ref->base.value.data.v_ptr;
 
-		if (mir_is_comptime(&var->value)) {
-			mir_set_const_ptr(const_ptr, &var->value, MIR_CP_VALUE);
+		if (var->is_comptime) {
+			switch (var->value.eval_mode) {
+			case MIR_VEM_STATIC:
+				mir_set_const_ptr(const_ptr, &var->value, MIR_CP_VALUE);
+				BL_UNIMPLEMENTED;
+				break;
+
+			case MIR_VEM_LAZY:
+				BL_UNIMPLEMENTED;
+				break;
+
+			default:
+				BL_ABORT("Invalid comptime variable value!");
+			}
 		} else {
 			const bool use_static_segment = var->is_in_gscope;
 			VMStackPtr ptr = read_stack_ptr(vm, var->rel_stack_ptr, use_static_segment);
-			mir_set_const_ptr(const_ptr, ptr, MIR_CP_STACK);
+			//mir_set_const_ptr(const_ptr, ptr, MIR_CP_STACK);
+
+			push_stack(vm, &ptr, ref->base.value.type);
 		}
 
 		break;
@@ -2172,6 +2186,7 @@ interp_instr_decl_ref(VM *vm, MirInstrDeclRef *ref)
 	case SCOPE_ENTRY_TYPE:
 	case SCOPE_ENTRY_MEMBER:
 	case SCOPE_ENTRY_VARIANT:
+	        BL_ABORT("Should not happend!");
 		break;
 
 	default:
@@ -2334,7 +2349,7 @@ interp_instr_decl_var(VM *vm, MirInstrDeclVar *decl)
 	 * already allocated variables will never be allocated again (in case
 	 * declaration is inside loop body!!!)
 	 */
-	if (mir_is_comptime(&var->value)) return;
+	if (var->is_comptime) return;
 
 	const bool use_static_segment = var->is_in_gscope;
 

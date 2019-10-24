@@ -1098,6 +1098,13 @@ gen_RTTI_types(Context *cnt);
 
 /* INLINES */
 
+static inline bool
+is_var_comptime(MirVar *var)
+{
+	if (var->is_mutable) return false;
+	return mir_is_comptime(&var->value);
+}
+
 /* Return MIR_VEM_STATIC or MIR_VEM_LAZY for constant value type. */
 static inline MirValueEvaluationMode
 choose_eval_mode_for_comptime(MirType *type)
@@ -3738,6 +3745,8 @@ append_instr_call(Context *cnt, Ast *node, MirInstr *callee, TSmallArray_InstrPt
 	tmp->args                 = args;
 	tmp->callee               = callee;
 	tmp->base.value.addr_mode = MIR_VAM_RVALUE;
+	/* call have by default runtime evaluated value */
+	tmp->base.value.eval_mode = MIR_VEM_RUNTIME;
 
 	ref_instr(&tmp->base);
 
@@ -3768,11 +3777,12 @@ append_instr_decl_var(Context * cnt,
 {
 	ref_instr(type);
 	ref_instr(init);
-	MirInstrDeclVar *tmp = CREATE_INSTR(cnt, MIR_INSTR_DECL_VAR, node, MirInstrDeclVar *);
-	tmp->base.ref_count  = NO_REF_COUNTING;
-	tmp->base.value.type = cnt->builtin_types.t_void;
-	tmp->type            = type;
-	tmp->init            = init;
+	MirInstrDeclVar *tmp      = CREATE_INSTR(cnt, MIR_INSTR_DECL_VAR, node, MirInstrDeclVar *);
+	tmp->base.value.type      = cnt->builtin_types.t_void;
+	tmp->base.value.eval_mode = MIR_VEM_NONE;
+	tmp->base.ref_count       = NO_REF_COUNTING;
+	tmp->type                 = type;
+	tmp->init                 = init;
 
 	tmp->var = create_var(cnt,
 	                      node,
@@ -3809,11 +3819,12 @@ append_instr_decl_var_impl(Context *   cnt,
 {
 	ref_instr(type);
 	ref_instr(init);
-	MirInstrDeclVar *tmp = CREATE_INSTR(cnt, MIR_INSTR_DECL_VAR, NULL, MirInstrDeclVar *);
-	tmp->base.ref_count  = NO_REF_COUNTING;
-	tmp->base.value.type = cnt->builtin_types.t_void;
-	tmp->type            = type;
-	tmp->init            = init;
+	MirInstrDeclVar *tmp      = CREATE_INSTR(cnt, MIR_INSTR_DECL_VAR, NULL, MirInstrDeclVar *);
+	tmp->base.value.eval_mode = MIR_VEM_NONE;
+	tmp->base.value.type      = cnt->builtin_types.t_void;
+	tmp->base.ref_count       = NO_REF_COUNTING;
+	tmp->type                 = type;
+	tmp->init                 = init;
 
 	tmp->var = create_var_impl(cnt, name, NULL, is_mutable, is_in_gscope, false);
 
@@ -5178,14 +5189,15 @@ analyze_instr_decl_ref(Context *cnt, MirInstrDeclRef *ref)
 
 		type                      = create_type_ptr(cnt, type);
 		ref->base.value.type      = type;
-		ref->base.value.eval_mode = var->value.eval_mode;
+		ref->base.value.eval_mode = var->is_comptime ? MIR_VEM_STATIC : MIR_VEM_RUNTIME;
 		ref->base.value.addr_mode = var->is_mutable ? MIR_VAM_LVALUE : MIR_VAM_LVALUE_CONST;
 
 		/* set pointer to variable const value directly when variable is compile
 		 * time known
 		 */
-		if (mir_is_comptime(&ref->base.value))
+		if (var->is_comptime) {
 			mir_set_const_ptr(&ref->base.value.data.v_ptr, var, MIR_CP_VAR);
+		}
 		break;
 	}
 
@@ -6213,8 +6225,6 @@ analyze_instr_decl_var(Context *cnt, MirInstrDeclVar *decl)
 	MirVar *var = decl->var;
 	BL_ASSERT(var);
 
-	bool is_decl_comptime = !var->is_mutable;
-
 	if (decl->type && var->value.type == NULL) {
 		AnalyzeResult result = analyze_resolve_type(cnt, decl->type, &var->value.type);
 		if (result.state != ANALYZE_PASSED) return result;
@@ -6242,9 +6252,9 @@ analyze_instr_decl_var(Context *cnt, MirInstrDeclVar *decl)
 			return ANALYZE_RESULT(FAILED, 0);
 		}
 
-		if (decl->init->kind ==
-		    MIR_INSTR_CALL) { /* Initialized by call to value resolver function. */
-			              /* Just to be sure we have call instruction. */
+		if (decl->init->kind == MIR_INSTR_CALL) {
+			/* Initialized by call to value resolver function. */
+			/* Just to be sure we have call instruction. */
 			BL_ASSERT(decl->init->kind == MIR_INSTR_CALL &&
 			          "Global initializer is supposed to be comptime implicit call.");
 
@@ -6296,7 +6306,10 @@ analyze_instr_decl_var(Context *cnt, MirInstrDeclVar *decl)
 			var->value.type = decl->init->value.type;
 		}
 
-		is_decl_comptime = mir_is_comptime(&decl->init->value);
+		/* Global variable is comptime when it's immutable and initialization value is
+		 * comptime. Existence of initialization value is guaranteed by previous error
+		 * checking.  */
+		var->is_comptime = !var->is_mutable && mir_is_comptime(&decl->init->value);
 	} else { // local variable
 		if (decl->init) {
 			if (var->value.type) {
@@ -6320,7 +6333,14 @@ analyze_instr_decl_var(Context *cnt, MirInstrDeclVar *decl)
 				var->value.type = type;
 			}
 
-			is_decl_comptime = mir_is_comptime(&decl->init->value);
+			/* Locals can be comtime only if they are immutable and initialization value
+			 * is comptime. */
+			var->is_comptime = !var->is_mutable && mir_is_comptime(&decl->init->value);
+		} else {
+			BL_ASSERT(var->is_mutable &&
+			          "Immutable local variable declaration without initializer value "
+			          "is illegal and should be handled in parser.");
+			var->is_comptime = !var->is_mutable;
 		}
 	}
 
@@ -6366,11 +6386,9 @@ analyze_instr_decl_var(Context *cnt, MirInstrDeclVar *decl)
 
 	reduce_instr(cnt, decl->init);
 
-	var->value.eval_mode = decl->base.value.eval_mode =
-	    is_decl_comptime ? choose_eval_mode_for_comptime(var->value.type) : MIR_VEM_RUNTIME;
-
-	if (mir_is_comptime(&decl->base.value) && decl->init) {
-		/* initialize when known in compiletime */
+	if (var->is_comptime && decl->init) {
+		BL_ASSERT(mir_is_comptime(&decl->init->value));
+		/* Variable can be initialized when it's comptime. */
 		var->value = decl->init->value;
 	}
 
@@ -6379,7 +6397,7 @@ analyze_instr_decl_var(Context *cnt, MirInstrDeclVar *decl)
 	/* Type declaration should not be generated in LLVM. */
 	var->gen_llvm = var->value.type->kind != MIR_TYPE_TYPE;
 
-	if (var->is_in_gscope && !mir_is_comptime(&var->value)) {
+	if (var->is_in_gscope && !var->is_comptime) {
 		/* Global varibales which are not compile time constants are allocated
 		 * on the stack, one option is to do allocation every time when we
 		 * invoke comptime function execution, but we don't know which globals

@@ -439,6 +439,7 @@ struct MirVar {
 	bool          is_mutable;
 	bool          is_in_gscope;
 	bool          is_implicit;
+        bool          is_comptime;
 	bool          gen_llvm;
 	u32           flags;
 	VMRelStackPtr rel_stack_ptr;
