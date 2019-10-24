@@ -166,8 +166,11 @@ typedef enum MirValueAddressMode {
 typedef enum MirValueEvaluationMode {
 	MIR_VEM_INVALID,
 
+	/* For void values. */
+	MIR_VEM_NONE,
+
 	/* Value can be evaluated only in runtime. */
-	_MIR_VEM_RUNTIME,
+	MIR_VEM_RUNTIME,
 
 	/* Value is static comptime primitive type stored in const expression value data. Conversion
 	   from comptime to runtime can be done without any additional operation needed. */
@@ -218,12 +221,6 @@ typedef enum MirCastOp {
 	MIR_CAST_PTRTOINT,
 	MIR_CAST_INTTOPTR,
 } MirCastOp;
-
-typedef enum MirValueEvalMode {
-	MIR_VEM_RUNTIME,
-	MIR_VEM_COMPTIME,
-	MIR_VEM_MIXED,
-} MirValueEvalMode;
 
 typedef struct {
 	VM *   vm;
@@ -440,7 +437,6 @@ struct MirVar {
 	Scope *       decl_scope;
 	s32           ref_count;
 	bool          is_mutable;
-	bool          comptime;
 	bool          is_in_gscope;
 	bool          is_implicit;
 	bool          gen_llvm;
@@ -451,13 +447,12 @@ struct MirVar {
 };
 
 struct MirInstr {
-	MirConstValue    value; // must be first
-	MirInstrKind     kind;
-	u64              id;
-	Ast *            node;
-	MirInstrBlock *  owner_block;
-	LLVMValueRef     llvm_value;
-	MirValueEvalMode eval_mode;
+	MirConstValue  value; // must be first
+	MirInstrKind   kind;
+	u64            id;
+	Ast *          node;
+	MirInstrBlock *owner_block;
+	LLVMValueRef   llvm_value;
 
 	s32  ref_count;
 	bool analyzed;
@@ -820,10 +815,10 @@ _mir_get_const_ptr(MirConstPtr *value, u32 valid_kind)
 }
 
 static inline bool
-mir_is_comptime(MirInstr *instr)
+mir_is_comptime(MirConstValue *v)
 {
-	BL_ASSERT(instr->value.eval_mode != MIR_VEM_INVALID && "Evaluation mode is invalid!");
-	return instr->value.eval_mode != MIR_VEM_RUNTIME;
+	BL_ASSERT(v->eval_mode != MIR_VEM_INVALID && "Evaluation mode is invalid!");
+	return v->eval_mode != MIR_VEM_RUNTIME;
 }
 
 ptrdiff_t

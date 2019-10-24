@@ -375,7 +375,7 @@ print_comptime_value_or_id(MirInstr *instr, FILE *stream)
 		return;
 	}
 
-	if (instr->eval_mode != MIR_VEM_COMPTIME || !instr->analyzed) {
+	if (mir_is_comptime(&instr->value) || !instr->analyzed) {
 		fprintf(stream, "%%%llu", (unsigned long long)instr->id);
 		return;
 	}
@@ -1100,7 +1100,7 @@ mir_print_instr(MirInstr *instr, FILE *stream)
 		break;
 	}
 
-	if (instr->eval_mode == MIR_VEM_COMPTIME) fprintf(stream, " /* comptime */");
+	if (mir_is_comptime(&instr->value)) fprintf(stream, " /* comptime */");
 	if (instr->unrechable) fprintf(stream, " /* unrechable */");
 
 	fprintf(stream, "\n");
