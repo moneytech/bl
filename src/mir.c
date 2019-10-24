@@ -4315,12 +4315,12 @@ reduce_instr(Context *cnt, MirInstr *instr)
 	case MIR_INSTR_CONST:
 	case MIR_INSTR_DECL_MEMBER:
 	case MIR_INSTR_DECL_VARIANT:
-	case MIR_INSTR_DECL_ARG:
-	case MIR_INSTR_DECL_REF: {
+	case MIR_INSTR_DECL_ARG: {
 		erase_instr(instr);
 		break;
 	}
 
+	case MIR_INSTR_DECL_REF: 
 	case MIR_INSTR_DECL_DIRECT_REF:
 	case MIR_INSTR_CAST:
 	case MIR_INSTR_BINOP:
@@ -5143,7 +5143,6 @@ analyze_instr_decl_ref(Context *cnt, MirInstrDeclRef *ref)
 		ref->base.value.eval_mode = MIR_VEM_STATIC;
 		ref->base.value.addr_mode = MIR_VAM_RVALUE;
 		ref_instr(fn->prototype);
-		mir_set_const_ptr(&ref->base.value.data.v_ptr, fn, MIR_CP_FN);
 		break;
 	}
 
@@ -5151,8 +5150,6 @@ analyze_instr_decl_ref(Context *cnt, MirInstrDeclRef *ref)
 		ref->base.value.type      = cnt->builtin_types.t_type;
 		ref->base.value.eval_mode = MIR_VEM_STATIC;
 		ref->base.value.addr_mode = MIR_VAM_LVALUE_CONST;
-
-		mir_set_const_ptr(&ref->base.value.data.v_ptr, found->data.type, MIR_CP_TYPE);
 		break;
 	}
 
@@ -5167,8 +5164,6 @@ analyze_instr_decl_ref(Context *cnt, MirInstrDeclRef *ref)
 		ref->base.value.type      = type;
 		ref->base.value.eval_mode = MIR_VEM_STATIC;
 		ref->base.value.addr_mode = MIR_VAM_LVALUE_CONST;
-		mir_set_const_ptr(&ref->base.value.data.v_ptr, variant->value, MIR_CP_VALUE);
-
 		break;
 	}
 
@@ -5192,13 +5187,6 @@ analyze_instr_decl_ref(Context *cnt, MirInstrDeclRef *ref)
 		ref->base.value.type      = type;
 		ref->base.value.eval_mode = var->is_comptime ? MIR_VEM_STATIC : MIR_VEM_RUNTIME;
 		ref->base.value.addr_mode = var->is_mutable ? MIR_VAM_LVALUE : MIR_VAM_LVALUE_CONST;
-
-		/* set pointer to variable const value directly when variable is compile
-		 * time known
-		 */
-		if (var->is_comptime) {
-			mir_set_const_ptr(&ref->base.value.data.v_ptr, var, MIR_CP_VAR);
-		}
 		break;
 	}
 

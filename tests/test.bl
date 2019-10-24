@@ -4,6 +4,8 @@ Foo :: 10 + 2;
 Bar :: Foo;
 homo := 10;
 
+Arr :: {:[2]s32: 1, 2};
+
 main :: fn () s32 {
     j := Foo + Bar + homo;
 

@@ -34,6 +34,8 @@
 #define MAX_ALIGNMENT 8
 #define VERBOSE_EXEC true
 #define CHCK_STACK true
+#define TMP_STACK_INDEX 0
+#define MAIN_THREAD_STACK_INDEX 1
 #define PTR_SIZE sizeof(void *) /* HACK: can cause problems with different build targets. */
 
 #define pop_stack_as(cnt, type, T) ((T)pop_stack((cnt), (type)))
@@ -140,8 +142,8 @@ TSMALL_ARRAY_TYPE(ConstValue, MirConstValue, 32);
 /*************/
 /* fwd decls */
 /*************/
-static void
-reset_stack(VMStack *stack);
+static VMStack *
+stack_new(usize stack_size);
 
 static void
 copy_comptime_to_stack(VM *vm, VMStackPtr dest_ptr, MirConstValue *src_value);
@@ -309,6 +311,9 @@ eval_instr_cast(MirInstrCast *cast);
 
 static void
 eval_instr_decl_direct_ref(MirInstrDeclDirectRef *ref);
+
+static void
+eval_instr_decl_ref(MirInstrDeclRef *ref);
 
 /***********/
 /* inlines */
@@ -615,18 +620,6 @@ print_call_stack(VM *vm, usize max_nesting)
 		builder_msg(BUILDER_MSG_LOG, 0, instr->node->location, BUILDER_CUR_WORD, "");
 		++n;
 	}
-}
-
-void
-reset_stack(VMStack *stack)
-{
-	stack->pc         = NULL;
-	stack->ra         = NULL;
-	stack->prev_block = NULL;
-	stack->aborted    = false;
-	const usize size  = stack_alloc_size(sizeof(VMStack));
-	stack->used_bytes = size;
-	stack->top_ptr    = (u8 *)stack + size;
 }
 
 /*
@@ -2160,8 +2153,6 @@ interp_instr_decl_ref(VM *vm, MirInstrDeclRef *ref)
 
 	switch (entry->kind) {
 	case SCOPE_ENTRY_VAR: {
-		/* CLEANUP: why we don't use decl ref in same way as other instructions??? Could we
-		 * push pointer to found scope entry on the stack for non-comptime references??? */
 		MirVar *var = entry->data.var;
 		BL_ASSERT(var);
 
@@ -2184,23 +2175,14 @@ interp_instr_decl_ref(VM *vm, MirInstrDeclRef *ref)
 		} else {
 			const bool use_static_segment = var->is_in_gscope;
 			VMStackPtr ptr = read_stack_ptr(vm, var->rel_stack_ptr, use_static_segment);
-			// mir_set_const_ptr(const_ptr, ptr, MIR_CP_STACK);
-
 			push_stack(vm, &ptr, ref->base.value.type);
 		}
 
 		break;
 	}
 
-	case SCOPE_ENTRY_FN:
-	case SCOPE_ENTRY_TYPE:
-	case SCOPE_ENTRY_MEMBER:
-	case SCOPE_ENTRY_VARIANT:
-		BL_ABORT("Should not happend!");
-		break;
-
 	default:
-		BL_ABORT("invalid declaration reference");
+		BL_ABORT("Invalid runtime declaration reference.");
 	}
 }
 
@@ -2642,6 +2624,10 @@ eval_instr(MirInstr *instr)
 		eval_instr_decl_direct_ref((MirInstrDeclDirectRef *)instr);
 		break;
 
+	case MIR_INSTR_DECL_REF:
+		eval_instr_decl_ref((MirInstrDeclRef *)instr);
+		break;
+
 	default:
 		BL_ABORT("Missing evaluation for instruction '%s'.", mir_instr_name(instr));
 	}
@@ -2801,12 +2787,38 @@ eval_instr_decl_direct_ref(MirInstrDeclDirectRef *ref)
 	mir_set_const_ptr(&ref->base.value.data.v_ptr, &var->value, MIR_CP_VAR);
 }
 
-/* public */
 void
-vm_init(VM *vm, Assembly *assembly, usize stack_size)
+eval_instr_decl_ref(MirInstrDeclRef *ref)
 {
-	if (stack_size == 0) BL_ABORT("invalid frame stack size");
+	ScopeEntry *entry = ref->scope_entry;
+	BL_ASSERT(entry && "Missing scope entry for declref");
 
+	switch (entry->kind) {
+	case SCOPE_ENTRY_FN:
+		mir_set_const_ptr(&ref->base.value.data.v_ptr, entry->data.fn, MIR_CP_FN);
+		break;
+
+	case SCOPE_ENTRY_TYPE:
+		mir_set_const_ptr(&ref->base.value.data.v_ptr, entry->data.type, MIR_CP_TYPE);
+		break;
+
+	case SCOPE_ENTRY_VARIANT:
+		mir_set_const_ptr(
+		    &ref->base.value.data.v_ptr, entry->data.variant->value, MIR_CP_VALUE);
+		break;
+
+	case SCOPE_ENTRY_VAR:
+		mir_set_const_ptr(&ref->base.value.data.v_ptr, entry->data.var, MIR_CP_VAR);
+		break;
+
+	default:
+		BL_ABORT("invalid scope entry kind");
+	}
+}
+
+VMStack *
+stack_new(usize stack_size)
+{
 	VMStack *stack = bl_malloc(sizeof(char) * stack_size);
 	if (!stack) BL_ABORT("bad alloc");
 #if BL_DEBUG
@@ -2814,9 +2826,24 @@ vm_init(VM *vm, Assembly *assembly, usize stack_size)
 #endif
 
 	stack->allocated_bytes = stack_size;
-	reset_stack(stack);
+	stack->pc              = NULL;
+	stack->ra              = NULL;
+	stack->prev_block      = NULL;
+	stack->aborted         = false;
+	const usize size       = stack_alloc_size(sizeof(VMStack));
+	stack->used_bytes      = size;
+	stack->top_ptr         = (u8 *)stack + size;
 
-	vm->stack    = stack;
+	return stack;
+}
+
+/* public */
+void
+vm_init(VM *vm, Assembly *assembly, usize stack_size)
+{
+	if (stack_size == 0) BL_ABORT("invalid frame stack size");
+
+	vm->stack    = stack_new(stack_size);
 	vm->assembly = assembly;
 
 	tsa_init(&vm->dyncall_sig_tmp);
