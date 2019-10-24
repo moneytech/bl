@@ -6,3 +6,5 @@ Foo :: 10 + 2;
 main :: fn () s32 {
     return Bar;
 }
+
+foo :: fn () {}
