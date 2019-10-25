@@ -5524,11 +5524,7 @@ analyze_instr_load(Context *cnt, MirInstrLoad *load)
 	load->base.value.type = type;
 
 	reduce_instr(cnt, src);
-	if (mir_is_comptime(&src->value)) {
-		load->base.value.eval_mode = src->value.data.v_ptr.data.value->eval_mode;
-	} else {
-		load->base.value.eval_mode = MIR_VEM_RUNTIME;
-	}
+	load->base.value.eval_mode = src->value.eval_mode;
 
 	/* INCOMPLETE: is this correct??? */
 	/* INCOMPLETE: is this correct??? */

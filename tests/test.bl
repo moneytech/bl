@@ -11,8 +11,9 @@ Entity :: struct {
 }
 
 main :: fn () s32 {
-    a := Arr;
-    j := Arr[0];
-    k := Foo + Bar + homo + a[1] + j;
-    return k;
+    i := 1;
+    a: s32;
+    a = Arr[i];
+
+    return a;
 }
