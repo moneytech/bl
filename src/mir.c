@@ -96,7 +96,6 @@ typedef struct {
 		ID *                   current_entity_id; /* Sometimes used for named structures */
 		MirInstr *             current_fwd_struct_decl;
 		bool                   enable_incomplete_decl_refs;
-		bool                   require_comptime_decl_refs;
 	} ast;
 
 	/* Analyze MIR generated from AST */
@@ -374,8 +373,7 @@ create_fn(Context *        cnt,
           u32              flags,
           MirInstrFnProto *prototype,
           bool             emit_llvm,
-          bool             is_in_gscope,
-          bool             is_comptime);
+          bool             is_in_gscope);
 
 static MirMember *
 create_member(Context *cnt, Ast *node, ID *id, Scope *scope, s64 index, MirType *type);
@@ -577,8 +575,7 @@ append_instr_decl_ref(Context *   cnt,
                       Unit *      parent_unit,
                       ID *        rid,
                       Scope *     scope,
-                      ScopeEntry *scope_entry,
-                      bool        comptime_required);
+                      ScopeEntry *scope_entry);
 
 static MirInstr *
 append_instr_decl_direct_ref(Context *cnt, MirInstr *ref);
@@ -2898,8 +2895,7 @@ create_fn(Context *        cnt,
           u32              flags,
           MirInstrFnProto *prototype,
           bool             emit_llvm,
-          bool             is_in_gscope,
-          bool             is_comptime)
+          bool             is_in_gscope)
 {
 	MirFn *tmp        = arena_alloc(&cnt->assembly->arenas.mir.fn);
 	tmp->variables    = create_arr(cnt->assembly, sizeof(MirVar *));
@@ -2910,7 +2906,6 @@ create_fn(Context *        cnt,
 	tmp->prototype    = &prototype->base;
 	tmp->emit_llvm    = emit_llvm;
 	tmp->is_in_gscope = is_in_gscope;
-	tmp->is_comptime  = is_comptime;
 	return tmp;
 }
 
@@ -3728,18 +3723,14 @@ append_instr_decl_ref(Context *   cnt,
                       Unit *      parent_unit,
                       ID *        rid,
                       Scope *     scope,
-                      ScopeEntry *scope_entry,
-                      bool        comptime_required)
+                      ScopeEntry *scope_entry)
 {
 	BL_ASSERT(scope && rid);
-	MirInstrDeclRef *tmp   = CREATE_INSTR(cnt, MIR_INSTR_DECL_REF, node, MirInstrDeclRef *);
-	tmp->scope_entry       = scope_entry;
-	tmp->scope             = scope;
-	tmp->rid               = rid;
-	tmp->parent_unit       = parent_unit;
-	tmp->comptime_required = comptime_required;
-
-	tmp->base.value.eval_mode = comptime_required ? MIR_VEM_STATIC : MIR_VEM_RUNTIME;
+	MirInstrDeclRef *tmp = CREATE_INSTR(cnt, MIR_INSTR_DECL_REF, node, MirInstrDeclRef *);
+	tmp->scope_entry     = scope_entry;
+	tmp->scope           = scope;
+	tmp->rid             = rid;
+	tmp->parent_unit     = parent_unit;
 
 	append_current_block(cnt, &tmp->base);
 	return &tmp->base;
@@ -5155,6 +5146,7 @@ analyze_instr_decl_ref(Context *cnt, MirInstrDeclRef *ref)
 
 		ref->base.value.type      = type;
 		ref->base.value.addr_mode = MIR_VAM_RVALUE;
+		ref->base.value.eval_mode = MIR_VEM_STATIC;
 		ref_instr(fn->prototype);
 		break;
 	}
@@ -5162,6 +5154,7 @@ analyze_instr_decl_ref(Context *cnt, MirInstrDeclRef *ref)
 	case SCOPE_ENTRY_TYPE: {
 		ref->base.value.type      = cnt->builtin_types.t_type;
 		ref->base.value.addr_mode = MIR_VAM_LVALUE_CONST;
+		ref->base.value.eval_mode = MIR_VEM_STATIC;
 		break;
 	}
 
@@ -5175,6 +5168,7 @@ analyze_instr_decl_ref(Context *cnt, MirInstrDeclRef *ref)
 		type                      = create_type_ptr(cnt, type);
 		ref->base.value.type      = type;
 		ref->base.value.addr_mode = MIR_VAM_LVALUE_CONST;
+		ref->base.value.eval_mode = MIR_VEM_STATIC;
 		break;
 	}
 
@@ -5194,18 +5188,10 @@ analyze_instr_decl_ref(Context *cnt, MirInstrDeclRef *ref)
 		}
 		++var->ref_count;
 
-		if (ref->comptime_required && !var->is_comptime) {
-			builder_msg(BUILDER_MSG_ERROR,
-			            ERR_EXPECTED_COMPTIME,
-			            ref->base.node->location,
-			            BUILDER_CUR_WORD,
-			            "Expected declaration reference to compile time known value.");
-			return ANALYZE_RESULT(FAILED, 0);
-		}
-
 		type                      = create_type_ptr(cnt, type);
 		ref->base.value.type      = type;
 		ref->base.value.addr_mode = var->is_mutable ? MIR_VAM_LVALUE : MIR_VAM_LVALUE_CONST;
+		ref->base.value.eval_mode = var->is_mutable ? MIR_VEM_RUNTIME : MIR_VEM_STATIC;
 		break;
 	}
 
@@ -6918,18 +6904,6 @@ analyze_instr(Context *cnt, MirInstr *instr)
 
 	if (state.state != ANALYZE_PASSED) return state;
 
-	/* Functions can be set to comptime known, such function is executed in evaluator and every
-	 * contained instruction must be also comptime. */
-	MirFn *fn = get_owner_fn(instr);
-	if (fn && fn->is_comptime && !mir_is_comptime(&instr->value)) {
-		builder_msg(BUILDER_MSG_ERROR,
-		            ERR_EXPECTED_COMPTIME,
-		            instr->node ? instr->node->location : NULL,
-		            BUILDER_CUR_WORD,
-		            "Expression must be comptile time known value.");
-		return ANALYZE_RESULT(FAILED, 0);
-	}
-
 	instr->analyzed = true;
 	return state;
 }
@@ -7777,8 +7751,8 @@ ast_test_case(Context *cnt, Ast *test)
 	const char *linkage_name = gen_uq_name(TEST_CASE_FN_NAME);
 	const bool  is_in_gscope =
 	    test->owner_scope->kind == SCOPE_GLOBAL || test->owner_scope->kind == SCOPE_PRIVATE;
-	MirFn *fn = create_fn(
-	    cnt, test, NULL, linkage_name, FLAG_TEST, fn_proto, emit_llvm, is_in_gscope, false);
+	MirFn *fn =
+	    create_fn(cnt, test, NULL, linkage_name, FLAG_TEST, fn_proto, emit_llvm, is_in_gscope);
 
 	BL_ASSERT(test->data.test_case.desc);
 	fn->test_case_desc = test->data.test_case.desc;
@@ -8260,13 +8234,7 @@ ast_expr_ref(Context *cnt, Ast *ref)
 	BL_ASSERT(unit);
 	BL_ASSERT(scope);
 
-	return append_instr_decl_ref(cnt,
-	                             ref,
-	                             unit,
-	                             &ident->data.ident.id,
-	                             scope,
-	                             NULL,
-	                             cnt->ast.require_comptime_decl_refs);
+	return append_instr_decl_ref(cnt, ref, unit, &ident->data.ident.id, scope, NULL);
 }
 
 MirInstr *
@@ -8319,8 +8287,7 @@ ast_expr_lit_fn(Context *cnt, Ast *lit_fn, Ast *decl_node, bool is_in_gscope, u3
 	                      (u32)flags,
 	                      fn_proto,
 	                      true,
-	                      is_in_gscope,
-	                      false);
+	                      is_in_gscope);
 
 	mir_set_const_ptr(&fn_proto->base.value.data.v_ptr, fn, MIR_CP_FN);
 
@@ -8611,13 +8578,11 @@ ast_decl_entity(Context *cnt, Ast *entity)
 			cnt->ast.enable_incomplete_decl_refs = false;
 			cnt->ast.current_fwd_struct_decl     = NULL;
 		} else if (is_in_gscope) {
-			cnt->ast.require_comptime_decl_refs = true;
 			/* Initialization of global variables must be done in
 			 * implicit initializer function executed in compile
 			 * time. Every initialization function must be able to
 			 * be executed in compile time. */
 			value = CREATE_VALUE_RESOLVER_CALL(ast_value, false);
-			cnt->ast.require_comptime_decl_refs = false;
 		} else {
 			value = ast(cnt, ast_value);
 		}
@@ -8708,7 +8673,7 @@ ast_type_ref(Context *cnt, Ast *type_ref)
 	BL_ASSERT(scope);
 
 	MirInstr *ref =
-	    append_instr_decl_ref(cnt, type_ref, unit, &ident->data.ident.id, scope, NULL, true);
+	    append_instr_decl_ref(cnt, type_ref, unit, &ident->data.ident.id, scope, NULL);
 	return ref;
 }
 
@@ -8921,7 +8886,7 @@ ast_create_impl_fn_call(Context *   cnt,
 	fn_proto->value.type      = final_fn_type;
 
 	MirFn *fn =
-	    create_fn(cnt, NULL, NULL, fn_name, 0, (MirInstrFnProto *)fn_proto, false, true, true);
+	    create_fn(cnt, NULL, NULL, fn_name, 0, (MirInstrFnProto *)fn_proto, false, true);
 	mir_set_const_ptr(&fn_proto->value.data.v_ptr, fn, MIR_CP_FN);
 
 	fn->type = final_fn_type;

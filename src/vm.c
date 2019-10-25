@@ -531,6 +531,20 @@ read_stack_ptr(VM *vm, usize si, VMRelStackPtr rel_ptr, bool ignore)
 	return base + rel_ptr;
 }
 
+static inline VMStackPtr
+fetch_lazy_value(VM *vm, MirConstValue *v)
+{
+	BL_ASSERT(v->eval_mode == MIR_VEM_LAZY);
+
+	if (!v->lazy_stack_tmp) {
+		/* Create temporary allocation if we don't have any yet. */
+		v->lazy_stack_tmp = push_stack_empty(vm, TMP_STACK_INDEX, v->type);
+		copy_comptime_to_stack(vm, v->lazy_stack_tmp, v);
+	}
+
+	return v->lazy_stack_tmp;
+}
+
 /* Return pointer to value evaluated from src instruction value.
  * This function cooperate with value evaluation mode:
  *
@@ -558,15 +572,7 @@ fetch_value(VM *vm, MirInstr *src)
 		break;
 
 	case MIR_VEM_LAZY:
-		if (!src->value.lazy_stack_tmp) {
-			/* Create temporary allocation if we don't
-			 * have any yet. */
-			src->value.lazy_stack_tmp =
-			    push_stack_empty(vm, TMP_STACK_INDEX, src->value.type);
-			copy_comptime_to_stack(vm, src->value.lazy_stack_tmp, &src->value);
-		}
-
-		result = src->value.lazy_stack_tmp;
+		result = fetch_lazy_value(vm, &src->value);
 		break;
 
 	default:
@@ -2265,12 +2271,9 @@ interp_instr_decl_ref(VM *vm, MirInstrDeclRef *ref)
 		MirVar *var = entry->data.var;
 		BL_ASSERT(var);
 
-		MirConstPtr *const_ptr = &ref->base.value.data.v_ptr;
-
 		if (var->is_comptime) {
 			switch (var->value.eval_mode) {
 			case MIR_VEM_STATIC:
-				mir_set_const_ptr(const_ptr, &var->value, MIR_CP_VALUE);
 				BL_UNIMPLEMENTED;
 				break;
 
@@ -2789,7 +2792,6 @@ eval_instr_call(VM *vm, MirInstrCall *call)
 {
 	MirFn *callee = get_callee(call);
 	BL_ASSERT(callee && "Missing callee for comptile time known call!");
-	BL_ASSERT(callee->is_comptime && "Callee must be comtime!");
 	BL_ASSERT(!IS_FLAG(callee->flags, FLAG_EXTERN) &&
 	          "Cannot evaluate comptime call to external fn!");
 

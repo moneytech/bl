@@ -243,7 +243,6 @@ struct MirFn {
 	LLVMValueRef llvm_value;
 	bool         fully_analyzed;
 	bool         emit_llvm;
-	bool         is_comptime;
 	bool         is_in_gscope;
 
 	u32         flags;
