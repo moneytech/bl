@@ -60,9 +60,10 @@ typedef struct VMStack {
 } VMStack;
 
 typedef struct VM {
-	VMStack *        stack;
-	struct Assembly *assembly;
-	TSmallArray_Char dyncall_sig_tmp;
+	VMStack *            stack[2];
+	struct Assembly *    assembly;
+	TSmallArray_Char     dyncall_sig_tmp;
+	TSmallArray_InstrPtr eval_caller_queue;
 } VM;
 
 void
@@ -75,7 +76,7 @@ void
 vm_execute_instr(VM *vm, struct MirInstr *instr);
 
 void
-vm_eval_comptime_instr(struct MirInstr *instr);
+vm_eval_comptime_instr(VM *vm, struct MirInstr *instr);
 
 bool
 vm_execute_instr_top_level_call(VM *vm, struct MirInstrCall *call);

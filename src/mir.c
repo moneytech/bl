@@ -373,7 +373,8 @@ create_fn(Context *        cnt,
           u32              flags,
           MirInstrFnProto *prototype,
           bool             emit_llvm,
-          bool             is_in_gscope);
+          bool             is_in_gscope,
+          bool             is_comptime);
 
 static MirMember *
 create_member(Context *cnt, Ast *node, ID *id, Scope *scope, s64 index, MirType *type);
@@ -1098,6 +1099,13 @@ gen_RTTI_types(Context *cnt);
 
 /* INLINES */
 
+static inline MirFn *
+get_owner_fn(MirInstr *instr)
+{
+	if (!instr->owner_block) return NULL;
+	return instr->owner_block->owner_fn;
+}
+
 static inline bool
 is_var_comptime(MirVar *var)
 {
@@ -1109,6 +1117,7 @@ is_var_comptime(MirVar *var)
 static inline MirValueEvaluationMode
 choose_eval_mode_for_comptime(MirType *type)
 {
+	if (type->kind == MIR_TYPE_VOID) return MIR_VEM_NONE;
 	return mir_is_composit_type(type) || type->kind == MIR_TYPE_ARRAY ? MIR_VEM_LAZY
 	                                                                  : MIR_VEM_STATIC;
 }
@@ -2887,7 +2896,8 @@ create_fn(Context *        cnt,
           u32              flags,
           MirInstrFnProto *prototype,
           bool             emit_llvm,
-          bool             is_in_gscope)
+          bool             is_in_gscope,
+          bool             is_comptime)
 {
 	MirFn *tmp        = arena_alloc(&cnt->assembly->arenas.mir.fn);
 	tmp->variables    = create_arr(cnt->assembly, sizeof(MirVar *));
@@ -2898,6 +2908,7 @@ create_fn(Context *        cnt,
 	tmp->prototype    = &prototype->base;
 	tmp->emit_llvm    = emit_llvm;
 	tmp->is_in_gscope = is_in_gscope;
+	tmp->is_comptime  = is_comptime;
 	return tmp;
 }
 
@@ -3259,7 +3270,10 @@ MirInstr *
 create_instr_call_comptime(Context *cnt, Ast *node, MirInstr *fn)
 {
 	BL_ASSERT(fn && fn->kind == MIR_INSTR_FN_PROTO);
-	MirInstrCall *tmp         = CREATE_INSTR(cnt, MIR_INSTR_CALL, node, MirInstrCall *);
+	MirInstrCall *tmp = CREATE_INSTR(cnt, MIR_INSTR_CALL, node, MirInstrCall *);
+
+	/* Comptime call has by default static evaluation mode. This could be cahnged during analyze
+	 * pass. */
 	tmp->base.value.eval_mode = MIR_VEM_STATIC;
 	tmp->base.ref_count       = 2;
 	tmp->callee               = fn;
@@ -4301,7 +4315,7 @@ reduce_instr(Context *cnt, MirInstr *instr)
 {
 	if (!instr) return;
 	/* instruction unknown in compile time cannot be reduced */
-	if (!mir_is_comptime(&instr->value) && instr->kind != MIR_INSTR_COMPOUND) return;
+	if (!mir_is_comptime(&instr->value)) return;
 
 	switch (instr->kind) {
 		/* Const expr value set during analyze pass. */
@@ -4320,7 +4334,7 @@ reduce_instr(Context *cnt, MirInstr *instr)
 		break;
 	}
 
-	case MIR_INSTR_DECL_REF: 
+	case MIR_INSTR_DECL_REF:
 	case MIR_INSTR_DECL_DIRECT_REF:
 	case MIR_INSTR_CAST:
 	case MIR_INSTR_BINOP:
@@ -4330,14 +4344,10 @@ reduce_instr(Context *cnt, MirInstr *instr)
 	case MIR_INSTR_SIZEOF:
 	case MIR_INSTR_ALIGNOF:
 	case MIR_INSTR_LOAD:
+	case MIR_INSTR_COMPOUND:
 	case MIR_INSTR_MEMBER_PTR: {
-		vm_eval_comptime_instr(instr);
+		vm_eval_comptime_instr(&cnt->vm, instr);
 		erase_instr(instr);
-		break;
-	}
-
-	case MIR_INSTR_COMPOUND: {
-		if (!((MirInstrCompound *)instr)->is_naked) erase_instr(instr);
 		break;
 	}
 
@@ -4356,12 +4366,11 @@ analyze_resolve_type(Context *cnt, MirInstr *resolver_call, MirType **out_type)
 	if (analyze_instr(cnt, resolver_call).state != ANALYZE_PASSED)
 		return ANALYZE_RESULT(POSTPONE, 0);
 
-	if (vm_execute_instr_top_level_call(&cnt->vm, (MirInstrCall *)resolver_call)) {
-		*out_type = resolver_call->value.data.v_ptr.data.type;
-		return ANALYZE_RESULT(PASSED, 0);
-	} else {
-		return ANALYZE_RESULT(FAILED, 0);
-	}
+	vm_eval_comptime_instr(&cnt->vm, resolver_call);
+	*out_type =
+	    mir_get_const_ptr(MirType *, &resolver_call->value.data.v_ptr, MIR_CP_TYPE | MIR_CP_FN);
+
+	return ANALYZE_RESULT(PASSED, 0);
 }
 
 AnalyzeResult
@@ -4551,13 +4560,6 @@ analyze_instr_compound(Context *cnt, MirInstrCompound *cmp)
 			                                : MIR_VEM_RUNTIME;
 		}
 
-		// NOTE: Instructions can be used as values!!!
-		if (mir_is_comptime(&cmp->base.value)) {
-			init_or_create_const_array(cnt,
-			                           &cmp->base.value,
-			                           type->data.array.elem_type,
-			                           (TSmallArray_ConstValuePtr *)values);
-		}
 		break;
 	}
 
@@ -4565,6 +4567,7 @@ analyze_instr_compound(Context *cnt, MirInstrCompound *cmp)
 	case MIR_TYPE_STRING:
 	case MIR_TYPE_VARGS:
 	case MIR_TYPE_STRUCT: {
+		BL_UNIMPLEMENTED;
 		if (cmp->is_zero_initialized) {
 			cmp->base.value.data.v_struct.is_zero_initializer = true;
 			break;
@@ -4609,6 +4612,7 @@ analyze_instr_compound(Context *cnt, MirInstrCompound *cmp)
 	}
 
 	default: {
+		BL_UNIMPLEMENTED;
 		/* Non-agregate type. */
 		if (values->size > 1) {
 			MirInstr *value = values->data[1];
@@ -4642,6 +4646,10 @@ analyze_instr_compound(Context *cnt, MirInstrCompound *cmp)
 		const char *tmp_name = gen_uq_name(IMPL_COMPOUND_TMP);
 		MirVar *    tmp_var  = create_var_impl(cnt, tmp_name, type, true, false, false);
 		cmp->tmp_var         = tmp_var;
+	}
+
+	if (mir_is_comptime(&cmp->base.value)) {
+		cmp->base.value.addr_mode = MIR_VAM_LVALUE_CONST;
 	}
 
 	return ANALYZE_RESULT(PASSED, 0);
@@ -5516,7 +5524,11 @@ analyze_instr_load(Context *cnt, MirInstrLoad *load)
 	load->base.value.type = type;
 
 	reduce_instr(cnt, src);
-	load->base.value.eval_mode = load->src->value.eval_mode;
+	if (mir_is_comptime(&src->value)) {
+		load->base.value.eval_mode = src->value.data.v_ptr.data.value->eval_mode;
+	} else {
+		load->base.value.eval_mode = MIR_VEM_RUNTIME;
+	}
 
 	/* INCOMPLETE: is this correct??? */
 	/* INCOMPLETE: is this correct??? */
@@ -6262,13 +6274,6 @@ analyze_instr_decl_var(Context *cnt, MirInstrDeclVar *decl)
 					terminal->infer_type = false;
 					fn->type =
 					    create_type_fn(cnt, NULL, var->value.type, NULL, false);
-
-					/* CLEANUP: why we need set type of the function also for fn
-					 * prototype ??? */
-					/* CLEANUP: why we need set type of the function also for fn
-					 * prototype ??? */
-					/* CLEANUP: why we need set type of the function also for fn
-					 * prototype ??? */
 					fn->prototype->value.type = fn->type;
 				}
 			}
@@ -6278,8 +6283,9 @@ analyze_instr_decl_var(Context *cnt, MirInstrDeclVar *decl)
 			AnalyzeResult result = analyze_instr(cnt, decl->init);
 			if (result.state != ANALYZE_PASSED) return result;
 
-			/* Execute only when analyze passed. */
-			vm_execute_instr_top_level_call(&cnt->vm, (MirInstrCall *)decl->init);
+			/* All globals are initialized with comptime value, we can use evaluation
+			 * here instead of VM execution. */
+			vm_eval_comptime_instr(&cnt->vm, decl->init);
 
 		} else { /* Initialized by constant value. */
 			BL_ASSERT(decl->init->kind == MIR_INSTR_CONST &&
@@ -6411,6 +6417,7 @@ analyze_instr_call(Context *cnt, MirInstrCall *call)
 	 * instruction must containt pointer to the MirFn object.
 	 */
 	const MirInstrKind callee_kind = call->callee->kind;
+	const bool         is_comptime = mir_is_comptime(&call->base.value);
 	const bool         is_direct_call =
 	    callee_kind != MIR_INSTR_DECL_REF && callee_kind != MIR_INSTR_MEMBER_PTR;
 
@@ -6448,19 +6455,12 @@ analyze_instr_call(Context *cnt, MirInstrCall *call)
 	}
 
 	if (is_direct_call) {
-		MirFn *fn = call->callee->value.data.v_ptr.data.fn;
+		MirFn *fn = mir_get_const_ptr(MirFn *, &call->callee->value.data.v_ptr, MIR_CP_FN);
 		BL_ASSERT(fn && "Missing function reference for direct call!");
 		if (mir_is_comptime(&call->base.value)) {
 			if (!fn->fully_analyzed) return ANALYZE_RESULT(POSTPONE, 0);
 		} else if (call->callee->kind == MIR_INSTR_FN_PROTO) {
 			/* Direct call of anonymous function. */
-
-			/*
-			 * CLENUP: Function reference counting is not clear, we can decide
-			 * to count references direcly inside MirFn or in function prototype
-			 * instruction.
-			 */
-			// ++fn->ref_count;
 			fn->emit_llvm = true;
 		}
 	}
@@ -6468,6 +6468,15 @@ analyze_instr_call(Context *cnt, MirInstrCall *call)
 	MirType *result_type = type->data.fn.ret_type;
 	BL_ASSERT(result_type && "invalid type of call result");
 	call->base.value.type = result_type;
+
+	if (is_comptime) {
+		/* Adjust evaluation mode for comptime call. By default comptime call has static
+		 * evaluation mode but it could be changed to lazy. */
+		call->base.value.eval_mode = choose_eval_mode_for_comptime(result_type);
+	} else {
+		call->base.value.eval_mode =
+		    result_type->kind == MIR_TYPE_VOID ? MIR_VEM_NONE : MIR_VEM_RUNTIME;
+	}
 
 	/* validate arguments */
 	const bool is_vargs = type->data.fn.is_vargs;
@@ -6567,6 +6576,8 @@ analyze_instr_call(Context *cnt, MirInstrCall *call)
 			}
 		}
 	}
+
+	// call->base.value.eval_mode =
 
 	return ANALYZE_RESULT(PASSED, 0);
 }
@@ -6898,8 +6909,21 @@ analyze_instr(Context *cnt, MirInstr *instr)
 		break;
 	}
 
-	instr->analyzed = state.state == ANALYZE_PASSED;
+	if (state.state != ANALYZE_PASSED) return state;
 
+	/* Functions can be set to comptime known, such function is executed in evaluator and every
+	 * contained instruction must be also comptime. */
+	MirFn *fn = get_owner_fn(instr);
+	if (fn && fn->is_comptime && !mir_is_comptime(&instr->value)) {
+		builder_msg(BUILDER_MSG_ERROR,
+		            ERR_EXPECTED_COMPTIME,
+		            instr->node ? instr->node->location : NULL,
+		            BUILDER_CUR_WORD,
+		            "Expression must be comptile time known value.");
+		return ANALYZE_RESULT(FAILED, 0);
+	}
+
+	instr->analyzed = true;
 	return state;
 }
 
@@ -7746,8 +7770,8 @@ ast_test_case(Context *cnt, Ast *test)
 	const char *linkage_name = gen_uq_name(TEST_CASE_FN_NAME);
 	const bool  is_in_gscope =
 	    test->owner_scope->kind == SCOPE_GLOBAL || test->owner_scope->kind == SCOPE_PRIVATE;
-	MirFn *fn =
-	    create_fn(cnt, test, NULL, linkage_name, FLAG_TEST, fn_proto, emit_llvm, is_in_gscope);
+	MirFn *fn = create_fn(
+	    cnt, test, NULL, linkage_name, FLAG_TEST, fn_proto, emit_llvm, is_in_gscope, false);
 
 	BL_ASSERT(test->data.test_case.desc);
 	fn->test_case_desc = test->data.test_case.desc;
@@ -8282,7 +8306,8 @@ ast_expr_lit_fn(Context *cnt, Ast *lit_fn, Ast *decl_node, bool is_in_gscope, u3
 	                      (u32)flags,
 	                      fn_proto,
 	                      true,
-	                      is_in_gscope);
+	                      is_in_gscope,
+	                      false);
 
 	mir_set_const_ptr(&fn_proto->base.value.data.v_ptr, fn, MIR_CP_FN);
 
@@ -8870,6 +8895,7 @@ ast_create_impl_fn_call(Context *   cnt,
 	 * type and create dummy type for the function. */
 	MirType *final_fn_type  = fn_type;
 	bool     infer_ret_type = false;
+
 	if (!final_fn_type) {
 		final_fn_type  = create_type_fn(cnt, NULL, NULL, NULL, false);
 		infer_ret_type = true;
@@ -8880,7 +8906,7 @@ ast_create_impl_fn_call(Context *   cnt,
 	fn_proto->value.type      = final_fn_type;
 
 	MirFn *fn =
-	    create_fn(cnt, NULL, NULL, fn_name, 0, (MirInstrFnProto *)fn_proto, false, true);
+	    create_fn(cnt, NULL, NULL, fn_name, 0, (MirInstrFnProto *)fn_proto, false, true, true);
 	mir_set_const_ptr(&fn_proto->value.data.v_ptr, fn, MIR_CP_FN);
 
 	fn->type = final_fn_type;
@@ -9481,6 +9507,7 @@ mir_run(Assembly *assembly)
 
 	gen_RTTI_types(&cnt);
 
+	/* Move those as separate stages! */
 	if (builder.options.run_tests) execute_test_cases(&cnt);
 	if (builder.options.run) execute_entry_fn(&cnt);
 

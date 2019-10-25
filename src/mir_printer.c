@@ -375,7 +375,7 @@ print_comptime_value_or_id(MirInstr *instr, FILE *stream)
 		return;
 	}
 
-	if (mir_is_comptime(&instr->value) || !instr->analyzed) {
+	if (!mir_is_comptime(&instr->value) || !instr->analyzed) {
 		fprintf(stream, "%%%llu", (unsigned long long)instr->id);
 		return;
 	}
@@ -853,7 +853,7 @@ print_instr_decl_direct_ref(MirInstrDeclDirectRef *ref, FILE *stream)
 {
 	print_instr_head(&ref->base, stream, "declref");
 
-	print_comptime_value_or_id(ref->ref, stream);
+	fprintf(stream, "%%%llu", (unsigned long long)ref->ref->id);
 	fprintf(stream, " /* direct */");
 }
 

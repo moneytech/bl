@@ -243,6 +243,7 @@ struct MirFn {
 	LLVMValueRef llvm_value;
 	bool         fully_analyzed;
 	bool         emit_llvm;
+	bool         is_comptime;
 	bool         is_in_gscope;
 
 	u32         flags;
@@ -419,7 +420,7 @@ struct MirConstValue {
 
 	/* Pointer to stack allocation needed for conversion of comptime lazy evaluated values to
 	 * runtime values. */
-	VMStackPtr *tmp;
+	VMStackPtr lazy_stack_tmp;
 };
 
 /* VARIANT */
@@ -439,7 +440,7 @@ struct MirVar {
 	bool          is_mutable;
 	bool          is_in_gscope;
 	bool          is_implicit;
-        bool          is_comptime;
+	bool          is_comptime;
 	bool          gen_llvm;
 	u32           flags;
 	VMRelStackPtr rel_stack_ptr;

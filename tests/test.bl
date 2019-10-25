@@ -2,20 +2,17 @@
 
 Foo :: 10 + 2;
 Bar :: Foo;
+Arr :: {:[4]s32: 1, 2, 3, 4};
 homo := 10;
 
-Arr :: {:[2]s32: 1, 2};
-
-main :: fn () s32 {
-    j := Foo + Bar + homo;
-
-    loop i := 0; i < 100; i += 1 {
-        j += 1;
-    }
-    
-    return j;
+Entity :: struct {
+    i: s32;
+    j: s32;
 }
 
-foo :: fn (a: s32, b: s32) s32 {
-    return a + b;
+main :: fn () s32 {
+    a := Arr;
+    j := Arr[0];
+    k := Foo + Bar + homo + a[1] + j;
+    return k;
 }
