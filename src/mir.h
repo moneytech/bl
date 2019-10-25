@@ -682,6 +682,7 @@ struct MirInstrDeclRef {
 
 	/* Set only for decl_refs inside struct member type resolvers. */
 	bool accept_incomplete_type;
+	bool comptime_required;
 };
 
 struct MirInstrDeclDirectRef {

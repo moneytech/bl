@@ -96,6 +96,7 @@ typedef struct {
 		ID *                   current_entity_id; /* Sometimes used for named structures */
 		MirInstr *             current_fwd_struct_decl;
 		bool                   enable_incomplete_decl_refs;
+		bool                   require_comptime_decl_refs;
 	} ast;
 
 	/* Analyze MIR generated from AST */
@@ -576,7 +577,8 @@ append_instr_decl_ref(Context *   cnt,
                       Unit *      parent_unit,
                       ID *        rid,
                       Scope *     scope,
-                      ScopeEntry *scope_entry);
+                      ScopeEntry *scope_entry,
+                      bool        comptime_required);
 
 static MirInstr *
 append_instr_decl_direct_ref(Context *cnt, MirInstr *ref);
@@ -3726,14 +3728,18 @@ append_instr_decl_ref(Context *   cnt,
                       Unit *      parent_unit,
                       ID *        rid,
                       Scope *     scope,
-                      ScopeEntry *scope_entry)
+                      ScopeEntry *scope_entry,
+                      bool        comptime_required)
 {
 	BL_ASSERT(scope && rid);
-	MirInstrDeclRef *tmp = CREATE_INSTR(cnt, MIR_INSTR_DECL_REF, node, MirInstrDeclRef *);
-	tmp->scope_entry     = scope_entry;
-	tmp->scope           = scope;
-	tmp->rid             = rid;
-	tmp->parent_unit     = parent_unit;
+	MirInstrDeclRef *tmp   = CREATE_INSTR(cnt, MIR_INSTR_DECL_REF, node, MirInstrDeclRef *);
+	tmp->scope_entry       = scope_entry;
+	tmp->scope             = scope;
+	tmp->rid               = rid;
+	tmp->parent_unit       = parent_unit;
+	tmp->comptime_required = comptime_required;
+
+	tmp->base.value.eval_mode = comptime_required ? MIR_VEM_STATIC : MIR_VEM_RUNTIME;
 
 	append_current_block(cnt, &tmp->base);
 	return &tmp->base;
@@ -5148,7 +5154,6 @@ analyze_instr_decl_ref(Context *cnt, MirInstrDeclRef *ref)
 		BL_ASSERT(type);
 
 		ref->base.value.type      = type;
-		ref->base.value.eval_mode = MIR_VEM_STATIC;
 		ref->base.value.addr_mode = MIR_VAM_RVALUE;
 		ref_instr(fn->prototype);
 		break;
@@ -5156,7 +5161,6 @@ analyze_instr_decl_ref(Context *cnt, MirInstrDeclRef *ref)
 
 	case SCOPE_ENTRY_TYPE: {
 		ref->base.value.type      = cnt->builtin_types.t_type;
-		ref->base.value.eval_mode = MIR_VEM_STATIC;
 		ref->base.value.addr_mode = MIR_VAM_LVALUE_CONST;
 		break;
 	}
@@ -5170,7 +5174,6 @@ analyze_instr_decl_ref(Context *cnt, MirInstrDeclRef *ref)
 
 		type                      = create_type_ptr(cnt, type);
 		ref->base.value.type      = type;
-		ref->base.value.eval_mode = MIR_VEM_STATIC;
 		ref->base.value.addr_mode = MIR_VAM_LVALUE_CONST;
 		break;
 	}
@@ -5191,9 +5194,17 @@ analyze_instr_decl_ref(Context *cnt, MirInstrDeclRef *ref)
 		}
 		++var->ref_count;
 
+		if (ref->comptime_required && !var->is_comptime) {
+			builder_msg(BUILDER_MSG_ERROR,
+			            ERR_EXPECTED_COMPTIME,
+			            ref->base.node->location,
+			            BUILDER_CUR_WORD,
+			            "Expected declaration reference to compile time known value.");
+			return ANALYZE_RESULT(FAILED, 0);
+		}
+
 		type                      = create_type_ptr(cnt, type);
 		ref->base.value.type      = type;
-		ref->base.value.eval_mode = var->is_comptime ? MIR_VEM_STATIC : MIR_VEM_RUNTIME;
 		ref->base.value.addr_mode = var->is_mutable ? MIR_VAM_LVALUE : MIR_VAM_LVALUE_CONST;
 		break;
 	}
@@ -8249,7 +8260,13 @@ ast_expr_ref(Context *cnt, Ast *ref)
 	BL_ASSERT(unit);
 	BL_ASSERT(scope);
 
-	return append_instr_decl_ref(cnt, ref, unit, &ident->data.ident.id, scope, NULL);
+	return append_instr_decl_ref(cnt,
+	                             ref,
+	                             unit,
+	                             &ident->data.ident.id,
+	                             scope,
+	                             NULL,
+	                             cnt->ast.require_comptime_decl_refs);
 }
 
 MirInstr *
@@ -8594,11 +8611,13 @@ ast_decl_entity(Context *cnt, Ast *entity)
 			cnt->ast.enable_incomplete_decl_refs = false;
 			cnt->ast.current_fwd_struct_decl     = NULL;
 		} else if (is_in_gscope) {
+			cnt->ast.require_comptime_decl_refs = true;
 			/* Initialization of global variables must be done in
 			 * implicit initializer function executed in compile
 			 * time. Every initialization function must be able to
 			 * be executed in compile time. */
 			value = CREATE_VALUE_RESOLVER_CALL(ast_value, false);
+			cnt->ast.require_comptime_decl_refs = false;
 		} else {
 			value = ast(cnt, ast_value);
 		}
@@ -8689,7 +8708,7 @@ ast_type_ref(Context *cnt, Ast *type_ref)
 	BL_ASSERT(scope);
 
 	MirInstr *ref =
-	    append_instr_decl_ref(cnt, type_ref, unit, &ident->data.ident.id, scope, NULL);
+	    append_instr_decl_ref(cnt, type_ref, unit, &ident->data.ident.id, scope, NULL, true);
 	return ref;
 }
 

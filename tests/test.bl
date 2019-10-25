@@ -2,8 +2,8 @@
 
 Foo :: 10 + 2;
 Bar :: Foo;
-Arr :: {:[4]s32: 1, 2, 3, 4};
-homo := 10;
+//Arr :: {:[4]s32: 1, 2, 3, 4};
+homo := 10 + 2;
 
 Entity :: struct {
     i: s32;
@@ -11,9 +11,5 @@ Entity :: struct {
 }
 
 main :: fn () s32 {
-    i := 1;
-    a: s32;
-    a = Arr[i];
-
-    return a;
+    return Foo;
 }
