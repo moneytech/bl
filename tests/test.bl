@@ -1,18 +1,69 @@
 /* playground */
 
 Foo :: 10 + 2;
-Bar :: Foo;
-Arr :: {:[4]s32: 1, 2, 3, 4};
-ArrPtr :: &Arr;
-homo := 10 + 2;
 
-Entity :: struct {
+Data :: struct {
     i: s32;
     j: s32;
 }
 
+Enum :: enum {
+    A :: 10;
+    B;
+    C;
+}
+
+Arr :: {:[4]s32: 1, 2, 3, 4};
+Arr2 :: {:[2]Data: {:Data: 10, 20}, {:Data: 30, 40}};
+Arr3 :: &Arr;
+Arr4 :: {:[10]s32: 0};
+
+FnPtr :: *fn ();
+fptr : FnPtr : &my_func;
+funcs := {:[2]FnPtr: &my_func, &my_func};
+
+my_func :: fn () {
+}
+
 main :: fn () s32 {
-    i := ^ArrPtr;
-    i[1];
-    return Foo;
+    result := 0;
+    result += test_1();
+    result += test_2();
+    result += test_3();
+    result += test_4();
+
+    print("hello!!!\n");
+
+    fptr();
+
+    a : Data;
+    a = {:Data: 10, 20};
+
+    info := typeinfo(s32);
+    
+    return result;
+}
+
+test_1 :: fn () s32 {
+    arr := Arr;
+    index := 2;
+    v := Arr[index];
+    return v;
+}
+
+test_2 :: fn () s32 {
+    index :: 1;
+    v :: Arr2[index];
+    return v.i + v.j;
+}
+
+test_3 :: fn () s32 {
+    v :: (^Arr3)[1];
+    return v;
+}
+
+test_4 :: fn () s32 {
+    index := 1;
+    a :: index;
+    return a;
 }

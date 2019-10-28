@@ -45,14 +45,16 @@ struct Assembly;
 struct Builder;
 struct Unit;
 
-typedef struct MirType       MirType;
-typedef struct MirMember     MirMember;
-typedef struct MirVariant    MirVariant;
-typedef struct MirArg        MirArg;
-typedef struct MirVar        MirVar;
-typedef struct MirFn         MirFn;
-typedef struct MirConstValue MirConstValue;
-typedef struct MirConstPtr   MirConstPtr;
+typedef struct MirType        MirType;
+typedef struct MirMember      MirMember;
+typedef struct MirVariant     MirVariant;
+typedef struct MirArg         MirArg;
+typedef struct MirVar         MirVar;
+typedef struct MirFn          MirFn;
+typedef struct MirConstValue  MirConstValue;
+typedef struct MirConstPtr    MirConstPtr;
+typedef struct MirConstStruct MirConstStruct;
+typedef struct MirConstArray  MirConstArray;
 
 typedef struct MirInstr              MirInstr;
 typedef struct MirInstrUnreachable   MirInstrUnreachable;
@@ -163,25 +165,6 @@ typedef enum MirValueAddressMode {
 	MIR_VAM_RVALUE,
 } MirValueAddressMode;
 
-typedef enum MirValueEvaluationMode {
-	MIR_VEM_INVALID,
-
-	/* For void values. */
-	MIR_VEM_NONE,
-
-	/* Value can be evaluated only in runtime. */
-	MIR_VEM_RUNTIME,
-
-	/* Value is static comptime primitive type stored in const expression value data. Conversion
-	   from comptime to runtime can be done without any additional operation needed. */
-	MIR_VEM_STATIC,
-
-	/* Value is comptime of composit or array type, such value cannot be directly converted from
-	   comptime to runtime, interpreter must make allocation in cache once when value is first
-	   used as runtime value. */
-	MIR_VEM_LAZY,
-} MirValueEvaluationMode;
-
 /* External function arguments passing composit types by value needs special handling in IR
  * according to System V UNIX call convetions. (I'm not sure if this is needed on Windows + MSVC
  * compiled dlls) */
@@ -231,7 +214,7 @@ typedef struct {
 struct MirFn {
 	/* Must be first!!! */
 	MirInstr *prototype;
-	ID *      id;
+	ID *      id; /* optional */
 	Ast *     decl_node;
 
 	/* function body scope if there is one (optional) */
@@ -382,9 +365,19 @@ struct MirConstPtr {
 	MirConstPtrKind kind;
 };
 
+struct MirConstStruct {
+	TSmallArray_ConstValuePtr *members;
+	bool                       is_zero_initializer;
+};
+
+struct MirConstArray {
+	TSmallArray_ConstValuePtr *elems;
+	bool                       is_zero_initializer;
+};
+
 /* VALUE */
 union MirConstValueData {
-	/* atomic types */
+	/* Atomic values. */
 	s64  v_s64;
 	s32  v_s32;
 	s16  v_s16;
@@ -398,28 +391,20 @@ union MirConstValueData {
 	bool v_bool;
 	char v_char;
 
+	/* Pointer values. */
 	MirConstPtr v_ptr;
 
-	struct {
-		TSmallArray_ConstValuePtr *members; // array of MirConstValues *
-		bool                       is_zero_initializer;
-	} v_struct;
-
-	struct {
-		TSmallArray_ConstValuePtr *elems; // array of MirConstValues *
-		bool                       is_zero_initializer;
-	} v_array;
+	/* Composit values. */
+	MirConstStruct v_struct;
+	MirConstArray  v_array;
 };
 
 struct MirConstValue {
-	union MirConstValueData data; /* data must be first!!! */
-	MirType *               type;
-	MirValueAddressMode     addr_mode;
-	MirValueEvaluationMode  eval_mode;
-
-	/* Pointer to stack allocation needed for conversion of comptime lazy evaluated values to
-	 * runtime values. */
-	VMStackPtr lazy_stack_tmp;
+	MirConstValueData   data; /* data must be first!!! */
+	MirType *           type;
+	MirValueAddressMode addr_mode;
+	bool                is_comptime;
+	VMStackPtr          comptime_alloc;
 };
 
 /* VARIANT */
@@ -444,7 +429,7 @@ struct MirVar {
 	u32           flags;
 	VMRelStackPtr rel_stack_ptr;
 	LLVMValueRef  llvm_value;
-	const char *  llvm_name;
+	const char *  linkage_name;
 };
 
 struct MirInstr {
@@ -814,13 +799,6 @@ _mir_get_const_ptr(MirConstPtr *value, u32 valid_kind)
 {
 	BL_ASSERT(value->kind & valid_kind && "Unexpected const pointer type!");
 	return value->data.any;
-}
-
-static inline bool
-mir_is_comptime(MirConstValue *v)
-{
-	BL_ASSERT(v->eval_mode != MIR_VEM_INVALID && "Evaluation mode is invalid!");
-	return v->eval_mode != MIR_VEM_RUNTIME;
 }
 
 ptrdiff_t

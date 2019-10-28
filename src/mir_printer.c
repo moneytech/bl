@@ -141,58 +141,77 @@ print_const_value(MirConstValue *value, FILE *stream)
 			fprintf(stream, "%f", data->v_f64);
 		}
 		break;
+
 	case MIR_TYPE_BOOL:
 		fprintf(stream, "%s", data->v_bool ? "true" : "false");
 		break;
+
 	case MIR_TYPE_TYPE:
 		print_type(data->v_ptr.data.type, false, stream, false);
 		break;
+
 	case MIR_TYPE_ENUM:
 		fprintf(stream, "%lld", (long long)data->v_s64);
 		break;
-	case MIR_TYPE_PTR: {
-		MirType *deref_type = mir_deref_type(type);
-		/* pointers to u8 is printed like strings */
-		if (deref_type->kind == MIR_TYPE_INT && deref_type->data.integer.bitcount == 8 &&
-		    deref_type->data.integer.is_signed == false) {
-			if (data->v_ptr.data.str == NULL) {
-				fprintf(stream, "<null>");
-				break;
-			}
 
-			char *tmp = strdup(data->v_ptr.data.str);
-			if (strtok(tmp, "\n")) {
-				fprintf(stream, "\"%s", strtok(tmp, "\n"));
-			} else {
-				fprintf(stream, "\"\"");
-				break;
-			}
-			char *next = strtok(NULL, "\n");
-			if (next && strlen(next)) fprintf(stdout, "...");
-			fprintf(stream, "\"");
-			free(tmp);
-		} else if (deref_type->kind == MIR_TYPE_FN) {
-			/* Pointer to function. */
-			MirFn *fn = data->v_ptr.data.any
-			                ? data->v_ptr.data.value->data.v_ptr.data.fn
-			                : NULL;
-			if (fn) {
-				fprintf(stream,
-				        "&%s",
-				        fn->linkage_name ? fn->linkage_name : fn->id->str);
-			} else {
-				fprintf(stream, "<invalid>");
-			}
-		} else {
+	case MIR_TYPE_PTR: {
+		switch (data->v_ptr.kind) {
+		case MIR_CP_FN: {
+			MirFn *fn = mir_get_const_ptr(MirFn *, &data->v_ptr, MIR_CP_FN);
+			fprintf(stream, "%s", fn->linkage_name);
+			break;
+		}
+
+		case MIR_CP_VAR: {
+			MirVar *var = mir_get_const_ptr(MirVar *, &data->v_ptr, MIR_CP_VAR);
+			fprintf(stream, "%s", var->linkage_name);
+			break;
+		}
+			/*
+		case MIR_CP_VALUE: {
+			MirConstValue *val =
+			    mir_get_const_ptr(MirConstValue *, &data->v_ptr, MIR_CP_VALUE);
+			fprintf(stream, "&");
+			print_const_value(val, stream);
+			break;
+		}
+			*/
+
+		default: {
 			fprintf(stream, "%p", data->v_ptr.data.any);
+		}
 		}
 		break;
 	}
+
 	case MIR_TYPE_NULL:
 		fprintf(stream, "null_");
 		print_type(type->data.null.base_type, false, stream, true);
 		break;
-	case MIR_TYPE_STRING:
+
+	case MIR_TYPE_STRING: {
+		if (data->v_struct.is_zero_initializer) {
+			fprintf(stream, "{0; \"\"}");
+			break;
+		}
+
+		MirConstValue *len = data->v_struct.members->data[0];
+		MirConstValue *ptr = data->v_struct.members->data[1];
+
+		fprintf(stream, "{%lld; \"", (long long)len->data.v_s64);
+
+		char *tmp = strdup(ptr->data.v_ptr.data.str);
+
+		if (strtok(tmp, "\n")) {
+			fprintf(stream, "%s", strtok(tmp, "\n"));
+		}
+		free(tmp);
+
+		fprintf(stream, "\"}");
+
+		break;
+	}
+
 	case MIR_TYPE_SLICE:
 	case MIR_TYPE_VARGS:
 	case MIR_TYPE_STRUCT: {
@@ -212,7 +231,7 @@ print_const_value(MirConstValue *value, FILE *stream)
 			for (usize i = 0; i < memc; ++i) {
 				member = members->data[i];
 				print_const_value(member, stream);
-				if (i + 1 < memc) fprintf(stream, ", ");
+				if (i + 1 < memc) fprintf(stream, "; ");
 			}
 
 			fprintf(stream, "}");
@@ -375,7 +394,7 @@ print_comptime_value_or_id(MirInstr *instr, FILE *stream)
 		return;
 	}
 
-	if (!mir_is_comptime(&instr->value) || !instr->analyzed) {
+	if (!instr->value.is_comptime || !instr->analyzed) {
 		fprintf(stream, "%%%llu", (unsigned long long)instr->id);
 		return;
 	}
@@ -770,7 +789,7 @@ print_instr_decl_var(MirInstrDeclVar *decl, FILE *stream)
 	MirVar *var = decl->var;
 	BL_ASSERT(var);
 
-	const char *name = var->llvm_name ? var->llvm_name : "<unknown>";
+	const char *name = var->linkage_name ? var->linkage_name : "<unknown>";
 
 	if (var->is_in_gscope) {
 		/* global scope variable */
@@ -901,7 +920,6 @@ void
 print_instr_store(MirInstrStore *store, FILE *stream)
 {
 	print_instr_head(&store->base, stream, "store");
-	BL_ASSERT(store->src && store->src);
 	print_comptime_value_or_id(store->src, stream);
 	fprintf(stream, " -> %%%llu", (unsigned long long)store->dest->id);
 	// print_comptime_value_or_id(store->dest, stream);
@@ -1100,7 +1118,7 @@ mir_print_instr(MirInstr *instr, FILE *stream)
 		break;
 	}
 
-	if (mir_is_comptime(&instr->value)) fprintf(stream, " /* comptime */");
+	if (instr->value.is_comptime) fprintf(stream, " /* comptime */");
 	if (instr->unrechable) fprintf(stream, " /* unrechable */");
 
 	fprintf(stream, "\n");

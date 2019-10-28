@@ -281,7 +281,7 @@ emit_global_var_proto(Context *cnt, MirVar *var)
 	if (var->llvm_value) return var->llvm_value;
 
 	LLVMTypeRef llvm_type = var->value.type->llvm_type;
-	var->llvm_value       = LLVMAddGlobal(cnt->llvm_module, llvm_type, var->llvm_name);
+	var->llvm_value       = LLVMAddGlobal(cnt->llvm_module, llvm_type, var->linkage_name);
 
 	LLVMSetGlobalConstant(var->llvm_value, !var->is_mutable);
 
@@ -297,7 +297,7 @@ fetch_value(Context *cnt, MirInstr *instr)
 {
 	LLVMValueRef value = NULL;
 
-	if (mir_is_comptime(&instr->value) && !instr->llvm_value) {
+	if (&instr->value.is_comptime && !instr->llvm_value) {
 		/* Declaration references must be generated even if they are compile time. */
 		if (instr->kind == MIR_INSTR_DECL_REF) {
 			emit_instr_decl_ref(cnt, (MirInstrDeclRef *)instr);
@@ -1042,7 +1042,7 @@ emit_instr_unop(Context *cnt, MirInstrUnop *unop)
 void
 emit_instr_compound(Context *cnt, MirVar *_tmp_var, MirInstrCompound *cmp)
 {
-	if (mir_is_comptime(&cmp->base.value) && !_tmp_var) {
+	if (cmp->base.value.is_comptime && !_tmp_var) {
 		cmp->base.llvm_value = emit_as_const(cnt, &cmp->base.value);
 		return;
 	}
@@ -1076,7 +1076,7 @@ emit_instr_compound(Context *cnt, MirVar *_tmp_var, MirInstrCompound *cmp)
 	if (cmp->is_zero_initialized) {
 		/* zero initialized */
 		build_call_memset_0(cnt, llvm_tmp, llvm_size, llvm_alignment);
-	} else if (mir_is_comptime(&cmp->base.value)) {
+	} else if (cmp->base.value.is_comptime) {
 		/* compile time known */
 		LLVMTypeRef llvm_type = type->llvm_type;
 		BL_ASSERT(llvm_type)
@@ -1728,7 +1728,7 @@ emit_allocas(Context *cnt, MirFn *fn)
 		if (!var->gen_llvm) continue;
 
 #if NAMED_VARS
-		var_name = var->llvm_name;
+		var_name = var->linkage_name;
 #else
 		var_name = "";
 #endif
