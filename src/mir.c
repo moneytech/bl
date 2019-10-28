@@ -3478,7 +3478,8 @@ create_instr_type_info(Context *cnt, Ast *node, MirInstr *expr)
 MirInstr *
 append_instr_type_info(Context *cnt, Ast *node, MirInstr *expr)
 {
-	MirInstr *tmp = create_instr_type_info(cnt, node, expr);
+	MirInstr *tmp          = create_instr_type_info(cnt, node, expr);
+	tmp->value.is_comptime = true;
 	append_current_block(cnt, tmp);
 	return tmp;
 }

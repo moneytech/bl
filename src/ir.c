@@ -847,9 +847,6 @@ emit_as_const(Context *cnt, MirConstValue *value)
 			break;
 		}
 
-		type = mir_deref_type(type);
-		BL_ASSERT(type)
-
 		switch (value->data.v_ptr.kind) {
 		case MIR_CP_VAR: {
 			/* value must contains pointer to constant variable */
