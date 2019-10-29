@@ -18,4 +18,29 @@
   - create scope
 
 * runtime vs comptime values
-  - lazy loading 
+  - Reduce only binary operations.
+  - Use stack operations for everything.
+  - Reduce differences between compile time and runtime data representation (simple interpretation).
+  - Keep simplyfied initializer functions for better reconstruction in LLVM generator.
+  - Use execution for comptime value resolving but keep result marked as comptime.
+  - Every comptime value must be representable as constant in LLVM.
+  - Don't show comptimes in analyzed MIR but keep them in basic blocks.
+  - Function must be analyzed before comtime execution!!! (stack can be used for non-primitive values)
+  - Use only types as metadata information.
+  - Type resolvers should act as something different?
+  - VM running in two modes:
+    1) COMPTIME - Every value is supposed to be compile time known (must be guarateed by analyze.
+    2) RUNTIME  - Runtime emulation of execution (accept comptime and runtime values also).
+
+  #+BEGIN_SRC blm
+  0% binop 10 + 20 
+  ----------------
+  0% const 30 // replace with constant value
+  
+
+  0% declref A
+  1% binop 10 + 0%
+  ----------------
+  0% declref A
+  1% binop 10 + 0% // keep same representation and eventually execute
+  #+END_SRC

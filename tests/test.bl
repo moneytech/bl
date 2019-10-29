@@ -7,11 +7,19 @@ Data :: struct {
     j: s32;
 }
 
+Data2 :: struct {
+    data: Data;
+    i: s32;
+}
+
 Enum :: enum {
     A :: 10;
     B;
     C;
 }
+
+MyData :: {:Data2: {:Data: 10, 20}, 30};
+DataPtr :: cast(*Data) &MyData;
 
 Arr :: {:[4]s32: 1, 2, 3, 4};
 Arr2 :: {:[2]Data: {:Data: 10, 20}, {:Data: 30, 40}};
@@ -39,7 +47,8 @@ main :: fn () s32 {
     a : Data;
     a = {:Data: 10, 20};
 
-    info := typeinfo(s32);
+    //info :: typeinfo(s32);
+    //print("%\n", ^info);
     
     return result;
 }

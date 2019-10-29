@@ -334,6 +334,9 @@ eval_instr_decl_direct_ref(VM *vm, MirInstrDeclDirectRef *ref);
 static void
 eval_instr_decl_ref(VM *vm, MirInstrDeclRef *ref);
 
+static void
+eval_instr_type_info(VM *vm, MirInstrTypeInfo *type_info);
+
 /***********/
 /* inlines */
 /***********/
@@ -2711,6 +2714,10 @@ eval_instr(VM *vm, MirInstr *instr)
 		eval_instr_ret(vm, (MirInstrRet *)instr);
 		break;
 
+	case MIR_INSTR_TYPE_INFO:
+		eval_instr_type_info(vm, (MirInstrTypeInfo *)instr);
+		break;
+
 	default:
 		BL_ABORT("Missing evaluation for instruction '%s'.", mir_instr_name(instr));
 	}
@@ -2738,9 +2745,22 @@ eval_instr_compound(VM *vm, MirInstrCompound *cmp)
 		break;
 
 	default:
-	        BL_ASSERT(values->size == 1);
-                cmp->base.value.data = values->data[0]->value.data;
+		BL_ASSERT(values->size == 1);
+		cmp->base.value.data = values->data[0]->value.data;
 	}
+}
+
+void
+eval_instr_type_info(VM *vm, MirInstrTypeInfo *type_info)
+{
+	MirVar *rtti_var = type_info->rtti_var;
+	BL_ASSERT(rtti_var && "Missing RTTI!");
+	BL_ASSERT(rtti_var->value.is_comptime && "RTTI tmp variable must be comptime!");
+
+	mir_set_const_ptr(&type_info->base.value.data.v_ptr, rtti_var, MIR_CP_VAR);
+
+	fetch_comptime_tmp(vm, &rtti_var->value);
+	type_info->base.value.comptime_alloc = (VMStackPtr)&rtti_var->value.comptime_alloc;
 }
 
 void

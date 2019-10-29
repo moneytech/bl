@@ -715,9 +715,10 @@ struct MirInstrVArgs {
 struct MirInstrTypeInfo {
 	MirInstr base;
 
-	/* pointer to the type of expression */
+	/* CLEANUP: remove pointer to the type of expression */
 	MirType * expr_type;
 	MirInstr *expr;
+	MirVar *  rtti_var;
 };
 
 struct MirInstrTypeKind {

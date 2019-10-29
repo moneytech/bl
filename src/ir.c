@@ -299,13 +299,15 @@ fetch_value(Context *cnt, MirInstr *instr)
 
 	if (instr->value.is_comptime && !instr->llvm_value) {
 		/* Declaration references must be generated even if they are compile time. */
-		if (instr->kind == MIR_INSTR_DECL_REF) {
-			emit_instr_decl_ref(cnt, (MirInstrDeclRef *)instr);
-		} else if (instr->kind == MIR_INSTR_CAST) {
-			emit_instr_cast(cnt, (MirInstrCast *)instr);
-		} else {
-			instr->llvm_value = emit_as_const(cnt, &instr->value);
+		if (instr->kind == MIR_INSTR_CALL) {
+			MirConstPtr *callee_ptr =
+			    &((MirInstrCall *)instr)->callee->value.data.v_ptr;
+			MirFn *callee = mir_get_const_ptr(MirFn *, callee_ptr, MIR_CP_FN);
+
+			instr = &callee->terminal_instr->base;
 		}
+
+		emit_instr(cnt, instr);
 	}
 
 	value = instr->llvm_value;
@@ -1279,7 +1281,7 @@ emit_instr_call(Context *cnt, MirInstrCall *call)
 {
 	/******************************************************************************************/
 #define INSERT_TMP(_name, _type)                                                                   \
-	LLVMValueRef _name = NULL;                                                                 \
+	LLVMValueRef(_name) = NULL;                                                                \
 	{                                                                                          \
 		LLVMBasicBlockRef llvm_prev_block = LLVMGetInsertBlock(cnt->llvm_builder);         \
                                                                                                    \
@@ -1293,7 +1295,7 @@ emit_instr_call(Context *cnt, MirInstrCall *call)
 			LLVMPositionBuilderAtEnd(cnt->llvm_builder, llvm_entry_block);             \
 		}                                                                                  \
                                                                                                    \
-		_name = LLVMBuildAlloca(cnt->llvm_builder, _type, "");                             \
+		(_name) = LLVMBuildAlloca(cnt->llvm_builder, (_type), "");                         \
 		LLVMPositionBuilderAtEnd(cnt->llvm_builder, llvm_prev_block);                      \
 	}                                                                                          \
 	/******************************************************************************************/
@@ -1313,7 +1315,7 @@ emit_instr_call(Context *cnt, MirInstrCall *call)
 	    callee->llvm_value ? callee->llvm_value : emit_fn_proto(cnt, called_fn);
 
 	bool       has_byval_arg = false;
-	const bool has_args      = call->args;
+	const bool has_args      = call->args != 0;
 
 	/* Tmp for arg values passed into the Call Instruction. */
 	TSmallArray_LLVMValue llvm_args;

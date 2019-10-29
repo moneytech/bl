@@ -1278,6 +1278,14 @@ mutate_instr(MirInstr *instr, MirInstrKind kind)
 	return instr;
 }
 
+static inline MirInstr *
+dup_instr(Context *cnt, MirInstr *instr)
+{
+	MirInstr *tmp = CREATE_INSTR(cnt, 0, NULL, MirInstr *);
+	memcpy(tmp, instr, SIZEOF_MIR_INSTR);
+	return tmp;
+}
+
 /* Erase instruction from block. */
 static inline void
 erase_instr(MirInstr *instr)
@@ -4393,6 +4401,7 @@ reduce_instr(Context *cnt, MirInstr *instr)
 	case MIR_INSTR_ALIGNOF:
 	case MIR_INSTR_LOAD:
 	case MIR_INSTR_COMPOUND:
+	case MIR_INSTR_TYPE_INFO:
 	case MIR_INSTR_MEMBER_PTR: {
 		vm_eval_comptime_instr(&cnt->vm, instr);
 		erase_instr(instr);
@@ -5114,12 +5123,10 @@ analyze_instr_type_info(Context *cnt, MirInstrTypeInfo *type_info)
 {
 	BL_ASSERT(type_info->expr);
 
+	/* Type info require all related types to be ready for generation RTTI information. Function
+	 * lookup_builtins_rtti will return missing RTTI related type ID if there is one. */
 	ID *missing_rtti_type = lookup_builtins_rtti(cnt);
-	if (!missing_rtti_type) return ANALYZE_RESULT(WAITING, missing_rtti_type->hash);
-
-	/* Resolve TypeInfo struct type */
-	MirType *ret_type = lookup_builtin(cnt, MIR_BUILTIN_ID_TYPE_INFO);
-	if (!ret_type) return ANALYZE_RESULT(POSTPONE, 0);
+	if (missing_rtti_type) return ANALYZE_RESULT(WAITING, missing_rtti_type->hash);
 
 	if (analyze_slot(cnt, &analyze_slot_conf_basic, &type_info->expr, NULL) != ANALYZE_PASSED) {
 		return ANALYZE_RESULT(FAILED, 0);
@@ -5134,12 +5141,10 @@ analyze_instr_type_info(Context *cnt, MirInstrTypeInfo *type_info)
 		BL_ASSERT(type);
 	}
 
-	type_info->expr_type = type;
-
-	schedule_RTTI_generation(cnt, type);
-
-	ret_type                   = create_type_ptr(cnt, ret_type);
-	type_info->base.value.type = ret_type;
+	type_info->rtti_var        = gen_RTTI(cnt, type);
+	type_info->expr_type       = type;
+	type_info->base.value.type = create_type_ptr(cnt, type_info->rtti_var->value.type);
+	BL_ASSERT(type_info->rtti_var);
 
 	return ANALYZE_RESULT(PASSED, 0);
 }
@@ -7119,7 +7124,7 @@ static inline MirVar *
 gen_RTTI_var(Context *cnt, MirType *type, MirConstValueData *value)
 {
 	const char *name = gen_uq_name(IMPL_RTTI_ENTRY);
-	MirVar *    var  = create_var_impl(cnt, name, type, false, true, false);
+	MirVar *    var  = create_var_impl(cnt, name, type, false, true, true);
 	var->value.data  = *value;
 
 	vm_create_implicit_global(&cnt->vm, var);
