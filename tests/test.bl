@@ -3,7 +3,13 @@
 #load "std/print.bl"
 
 main :: fn () s32 {
-    print("Hello world!!!\n");
+    i :: 10;
+    #if i == 10 {
+        print("Static block is true!!!");
+    } else {
+        print("Static block is false!!!");
+    }
+
     return 0;
 }
 

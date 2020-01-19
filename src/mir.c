@@ -182,8 +182,7 @@ static void
 fn_dtor(MirFn **_fn)
 {
 	MirFn *fn = *_fn;
-	if (fn->dyncall.extern_callback_handle) 
-		dcbFreeCallback(fn->dyncall.extern_callback_handle);
+	if (fn->dyncall.extern_callback_handle) dcbFreeCallback(fn->dyncall.extern_callback_handle);
 }
 
 /* FW decls */
@@ -373,6 +372,9 @@ static MirVariant *
 create_variant(Context *cnt, ID *id, Scope *scope, MirConstExprValue *value);
 
 static MirInstrBlock *
+create_block(Context *cnt, const char *name);
+
+static MirInstrBlock *
 append_block(Context *cnt, MirFn *fn, const char *name);
 
 static MirInstrBlock *
@@ -461,6 +463,13 @@ append_instr_cond_br(Context *      cnt,
                      MirInstr *     cond,
                      MirInstrBlock *then_block,
                      MirInstrBlock *else_block);
+
+static MirInstr *
+append_instr_static_if(Context *      cnt,
+                       Ast *          node,
+                       MirInstr *     cond,
+                       MirInstrBlock *then_block,
+                       MirInstrBlock *else_block);
 
 static MirInstr *
 append_instr_br(Context *cnt, Ast *node, MirInstrBlock *then_block);
@@ -654,6 +663,9 @@ ast_block(Context *cnt, Ast *block);
 
 static void
 ast_stmt_if(Context *cnt, Ast *stmt_if);
+
+static void
+ast_stmt_static_if(Context *cnt, Ast *stmt_if);
 
 static void
 ast_stmt_return(Context *cnt, Ast *ret);
@@ -859,6 +871,9 @@ analyze_resolve_type(Context *cnt, MirInstr *resolver_call, MirType **out_type);
 
 static AnalyzeResult
 analyze_instr_compound(Context *cnt, MirInstrCompound *cmp);
+
+static AnalyzeResult
+analyze_instr_static_if(Context *cnt, MirInstrStaticIf *sif);
 
 static AnalyzeResult
 analyze_instr_set_initializer(Context *cnt, MirInstrSetInitializer *si);
@@ -3188,14 +3203,24 @@ create_instr(Context *cnt, MirInstrKind kind, Ast *node)
 }
 
 MirInstrBlock *
-append_block(Context *cnt, MirFn *fn, const char *name)
+create_block(Context *cnt, const char *name)
 {
-	BL_ASSERT(fn && name);
+	BL_ASSERT(name);
 	MirInstrBlock *tmp   = create_instr(cnt, MIR_INSTR_BLOCK, NULL);
 	tmp->base.value.type = cnt->builtin_types->t_void;
 	tmp->name            = name;
-	tmp->owner_fn        = fn;
-	tmp->emit_llvm       = true;
+
+	return tmp;
+}
+
+MirInstrBlock *
+append_block(Context *cnt, MirFn *fn, const char *name)
+{
+	BL_ASSERT(fn && name);
+
+	MirInstrBlock *tmp = create_block(cnt, name);
+	tmp->owner_fn      = fn;
+	tmp->emit_llvm     = true;
 
 	if (!fn->first_block) {
 		fn->first_block = tmp;
@@ -3533,6 +3558,29 @@ append_instr_cond_br(Context *      cnt,
 
 	MirInstrBlock *block = get_current_block(cnt);
 	if (!is_block_terminated(block)) terminate_block(block, &tmp->base);
+	return &tmp->base;
+}
+
+MirInstr *
+append_instr_static_if(Context *      cnt,
+                       Ast *          node,
+                       MirInstr *     cond,
+                       MirInstrBlock *then_block,
+                       MirInstrBlock *else_block)
+{
+	BL_ASSERT(cond);
+	ref_instr(cond);
+
+	MirInstrStaticIf *tmp       = create_instr(cnt, MIR_INSTR_STATIC_IF, node);
+	tmp->base.value.type        = cnt->builtin_types->t_void;
+	tmp->base.ref_count         = 1;
+	tmp->base.value.is_comptime = true;
+	tmp->cond                   = cond;
+	tmp->then_tmp_block         = then_block;
+	tmp->else_tmp_block         = else_block;
+
+	append_current_block(cnt, &tmp->base);
+
 	return &tmp->base;
 }
 
@@ -4327,6 +4375,13 @@ erase_instr_tree(MirInstr *instr, bool keep_root, bool force)
 			break;
 		}
 
+		case MIR_INSTR_STATIC_IF: {
+			MirInstrStaticIf *sif = (MirInstrStaticIf *)top;
+			unref_instr(sif->cond);
+			tsa_push_InstrPtr64(&queue, sif->cond);
+			break;
+		}
+
 		case MIR_INSTR_BLOCK:
 			continue;
 
@@ -4389,6 +4444,46 @@ analyze_resolve_type(Context *cnt, MirInstr *resolver_call, MirType **out_type)
 	} else {
 		return ANALYZE_RESULT(FAILED, 0);
 	}
+}
+
+AnalyzeResult
+analyze_instr_static_if(Context *cnt, MirInstrStaticIf *sif)
+{
+	BL_ASSERT(sif->cond && "Invalid StaticIf test expression!");
+
+	if (analyze_slot(cnt, &analyze_slot_conf_default, &sif->cond, cnt->builtin_types->t_bool) !=
+	    ANALYZE_PASSED) {
+		return ANALYZE_RESULT(FAILED, 0);
+	}
+
+	/* Condition expression of the static if statement must be compile-time known. */
+	if (!mir_is_comptime(sif->cond)) {
+		builder_msg(
+		    BUILDER_MSG_ERROR,
+		    ERR_EXPECTED_CONST,
+		    sif->cond->node->location,
+		    BUILDER_CUR_WORD,
+		    "Conditional expression of the static if must be compile-time constant.");
+		return ANALYZE_RESULT(FAILED, 0);
+	}
+
+	const bool cond_value = MIR_CEV_READ_AS(bool, &sif->cond->value);
+	BL_LOG("Static if result = %s.", cond_value ? "TRUE" : "FALSE");
+
+	/* When result of the static if condition is known in compile time we can decide which
+	 * branch should be used. We basically replace StaticIf instruction by selected branch. */
+
+	MirInstrBlock *chosen_block = cond_value ? sif->then_tmp_block : sif->else_tmp_block;
+
+	if (!chosen_block) {
+		/* It's OK when branch block is empty. */
+		return ANALYZE_RESULT(PASSED, 0);
+	}
+
+	unref_instr(&sif->base);
+
+	/* INCOMPLETE: unroll chosen block here. */
+	return ANALYZE_RESULT(PASSED, 0);
 }
 
 AnalyzeResult
@@ -6897,6 +6992,9 @@ analyze_instr(Context *cnt, MirInstr *instr)
 	case MIR_INSTR_SET_INITIALIZER:
 		state = analyze_instr_set_initializer(cnt, (MirInstrSetInitializer *)instr);
 		break;
+	case MIR_INSTR_STATIC_IF:
+		state = analyze_instr_static_if(cnt, (MirInstrStaticIf *)instr);
+		break;
 	}
 
 	if (state.state == ANALYZE_PASSED) {
@@ -7636,6 +7734,36 @@ void
 ast_unrecheable(Context *cnt, Ast *unr)
 {
 	append_instr_unrecheable(cnt, unr);
+}
+
+void
+ast_stmt_static_if(Context *cnt, Ast *stmt_if)
+{
+	Ast *ast_cond = stmt_if->data.stmt_if.test;
+	Ast *ast_then = stmt_if->data.stmt_if.true_stmt;
+	Ast *ast_else = stmt_if->data.stmt_if.false_stmt;
+
+	/* INCOMPLETE: This will work only in local scope. We probably need value resolver helper
+	 * function for this. */
+	MirInstr *     cond = ast(cnt, ast_cond);
+	MirInstrBlock *then_block;
+	MirInstrBlock *else_block;
+	MirInstrBlock *prev_block = get_current_block(cnt);
+
+	if (ast_then) {
+		then_block = create_block(cnt, ".static_if_then");
+		set_current_block(cnt, then_block);
+		ast(cnt, ast_then);
+	}
+
+	if (ast_else) {
+		else_block = create_block(cnt, ".static_if_else");
+		set_current_block(cnt, else_block);
+		ast(cnt, ast_else);
+	}
+
+	set_current_block(cnt, prev_block);	
+	append_instr_static_if(cnt, stmt_if, cond, then_block, else_block);
 }
 
 void
@@ -8848,6 +8976,9 @@ ast(Context *cnt, Ast *node)
 	case AST_STMT_CONTINUE:
 		ast_stmt_continue(cnt, node);
 		break;
+	case AST_STMT_STATIC_IF:
+		ast_stmt_static_if(cnt, node);
+		break;
 	case AST_STMT_IF:
 		ast_stmt_if(cnt, node);
 		break;
@@ -9024,6 +9155,8 @@ mir_instr_name(MirInstr *instr)
 		return "InstrSwitch";
 	case MIR_INSTR_SET_INITIALIZER:
 		return "InstrSetInitializer";
+	case MIR_INSTR_STATIC_IF:
+		return "InstrStaticIf";
 	}
 
 	return "UNKNOWN";

@@ -102,6 +102,7 @@ typedef struct MirInstrPhi            MirInstrPhi;
 typedef struct MirInstrToAny          MirInstrToAny;
 typedef struct MirInstrSwitch         MirInstrSwitch;
 typedef struct MirInstrSetInitializer MirInstrSetInitializer;
+typedef struct MirInstrStaticIf       MirInstrStaticIf;
 
 typedef struct MirArenas {
 	Arena instr;
@@ -638,6 +639,14 @@ struct MirInstrBr {
 	MirInstr base;
 
 	MirInstrBlock *then_block;
+};
+
+struct MirInstrStaticIf {
+	MirInstr base;
+
+	MirInstr *     cond;
+	MirInstrBlock *then_tmp_block; /* Optional. */
+	MirInstrBlock *else_tmp_block; /* Optional. */
 };
 
 struct MirInstrCompound {

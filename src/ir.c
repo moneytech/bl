@@ -2422,6 +2422,10 @@ emit_instr(Context *cnt, MirInstr *instr)
 	case MIR_INSTR_SET_INITIALIZER:
 		emit_instr_set_initializer(cnt, (MirInstrSetInitializer *)instr);
 		break;
+	case MIR_INSTR_STATIC_IF:
+		BL_ABORT("StaticIf instruction must be replaced by resolved implementation block "
+		         "before LLVM IR pass!");
+		break;
 	}
 }
 

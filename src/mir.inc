@@ -39,6 +39,7 @@
 	MirInstrToAny          toany;\
 	MirInstrSwitch         sw;\
 	MirInstrSetInitializer si;\
+	MirInstrStaticIf       sif;\
 })
 #endif
 
@@ -82,6 +83,7 @@
 	MIR_INSTR_TOANY,
 	MIR_INSTR_SWITCH,
 	MIR_INSTR_SET_INITIALIZER,
+	MIR_INSTR_STATIC_IF
 #endif
 
 #ifdef GEN_BUILTIN_NAMES

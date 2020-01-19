@@ -130,6 +130,7 @@ struct AstStmtDefer {
 	Ast *expr;
 };
 
+/* Used also for AST_STMT_STATIC_IF. */
 struct AstStmtIf {
 	Ast *test;
 	Ast *true_stmt;

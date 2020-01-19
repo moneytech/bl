@@ -2292,6 +2292,12 @@ eval_instr(VM *vm, MirInstr *instr)
 	case MIR_INSTR_ALIGNOF:
 		break;
 
+	case MIR_INSTR_STATIC_IF:
+		// INCOMPLETE
+		// INCOMPLETE
+		// INCOMPLETE
+		break;
+
 	default:
 		BL_ABORT("Missing evaluation for instruction '%s'.", mir_instr_name(instr));
 	}

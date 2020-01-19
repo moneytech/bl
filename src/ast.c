@@ -111,6 +111,8 @@ ast_get_name(const Ast *n)
 		return "StmtDefer";
 	case AST_STMT_IF:
 		return "StmtIf";
+	case AST_STMT_STATIC_IF:
+		return "StmtStaticIf";
 	case AST_STMT_LOOP:
 		return "StmtLoop";
 	case AST_STMT_BREAK:

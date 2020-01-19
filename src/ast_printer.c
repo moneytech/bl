@@ -686,6 +686,7 @@ print_node(Ast *node, s32 pad, FILE *stream)
 		print_stmt_defer(node, pad, stream);
 		break;
 
+	case AST_STMT_STATIC_IF:
 	case AST_STMT_IF:
 		print_stmt_if(node, pad, stream);
 		break;

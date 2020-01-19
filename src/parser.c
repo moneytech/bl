@@ -82,6 +82,7 @@ typedef enum {
 	HD_META        = 1 << 12,
 	HD_ENTRY       = 1 << 12,
 	HD_BUILD_ENTRY = 1 << 13,
+	HD_STATIC_IF   = 1 << 14,
 } HashDirective;
 
 typedef struct {
@@ -164,7 +165,7 @@ static Ast *
 parse_stmt_return(Context *cnt);
 
 static Ast *
-parse_stmt_if(Context *cnt);
+parse_stmt_if(Context *cnt, bool is_static);
 
 static Ast *
 parse_stmt_loop(Context *cnt);
@@ -363,12 +364,43 @@ parse_hash_directive(Context *cnt, s32 expected_mask, HashDirective *satisfied)
 	Token *tok_hash = tokens_consume_if(cnt->tokens, SYM_HASH);
 	if (!tok_hash) return NULL;
 
-	Token *tok_directive = tokens_consume(cnt->tokens);
-	if (tok_directive->sym != SYM_IDENT) goto INVALID;
+	Token *tok_directive = tokens_peek(cnt->tokens);
+	Ast *  tmp_node      = NULL;
 
+	/***********************/
+	/* Static if statement */
+	/***********************/
+
+	/*
+	 * We use regular 'if' parser procedure for parsing 'static if' since there is no syntax
+	 * difference from regular 'if' except it is supposed to be prefixed with hash symbol.
+	 * Resulting AST node is returned as hash directive extension from this function.
+	 */
+	if ((tmp_node = parse_stmt_if(cnt, true))) {
+		set_satisfied(HD_STATIC_IF);
+
+		if (IS_NOT_FLAG(expected_mask, HD_STATIC_IF)) {
+			PARSE_ERROR(ERR_UNEXPECTED_DIRECTIVE,
+			            tok_directive,
+			            BUILDER_CUR_WORD,
+			            "Unexpected directive.");
+			return ast_create_node(
+			    cnt->ast_arena, AST_BAD, tok_directive, scope_get(cnt));
+		}
+
+		return tmp_node;
+	}
+
+	/* Eat token after '#' */
+	tokens_consume(cnt->tokens);
+	/* Check if token after '#' is Indetificator!!! */
+	if (tok_directive->sym != SYM_IDENT) goto INVALID;
 	const char *directive = tok_directive->value.str;
 	BL_ASSERT(directive);
 
+	/*****************************/
+	/* #load - Loads source file */
+	/*****************************/
 	if (strcmp(directive, "load") == 0) {
 		/* load <string> */
 		set_satisfied(HD_LOAD);
@@ -403,6 +435,9 @@ parse_hash_directive(Context *cnt, s32 expected_mask, HashDirective *satisfied)
 		return load;
 	}
 
+	/**************************************************/
+	/* #link - Link library. (DEPRECATED since 0.5.2) */
+	/**************************************************/
 	if (strcmp(directive, "link") == 0) {
 		/* link <string> */
 		set_satisfied(HD_LINK);
@@ -434,6 +469,9 @@ parse_hash_directive(Context *cnt, s32 expected_mask, HashDirective *satisfied)
 		return link;
 	}
 
+	/********************************/
+	/* #test - Test case procedure. */
+	/********************************/
 	if (strcmp(directive, "test") == 0) {
 		/* test <string> {} */
 		set_satisfied(HD_TEST);
@@ -484,6 +522,9 @@ parse_hash_directive(Context *cnt, s32 expected_mask, HashDirective *satisfied)
 		return test;
 	}
 
+	/************************************/
+	/* #file - Current source filename. */
+	/************************************/
 	if (strcmp(directive, "file") == 0) {
 		set_satisfied(HD_FILE);
 		if (IS_NOT_FLAG(expected_mask, HD_FILE)) {
@@ -502,6 +543,9 @@ parse_hash_directive(Context *cnt, s32 expected_mask, HashDirective *satisfied)
 		return file;
 	}
 
+	/********************************/
+	/* #base - Structure base type. */
+	/********************************/
 	if (strcmp(directive, "base") == 0) {
 		set_satisfied(HD_BASE);
 		if (IS_NOT_FLAG(expected_mask, HD_BASE)) {
@@ -517,6 +561,9 @@ parse_hash_directive(Context *cnt, s32 expected_mask, HashDirective *satisfied)
 	}
 
 #if 0
+	/*********************/
+	/* #meta - NOT USED. */
+	/*********************/
 	if (strcmp(directive, "meta") == 0) {
 		set_satisfied(HD_META);
 		if (IS_NOT_FLAG(expected_mask, HD_META)) {
@@ -547,6 +594,9 @@ parse_hash_directive(Context *cnt, s32 expected_mask, HashDirective *satisfied)
 	}
 #endif
 
+	/*********************************/
+	/* #line - Current line in file. */
+	/*********************************/
 	if (strcmp(directive, "line") == 0) {
 		set_satisfied(HD_LINE);
 		if (IS_NOT_FLAG(expected_mask, HD_LINE)) {
@@ -565,6 +615,9 @@ parse_hash_directive(Context *cnt, s32 expected_mask, HashDirective *satisfied)
 		return line;
 	}
 
+	/**********************************/
+	/* #entry - Entry procedure flag. */
+	/**********************************/
 	if (strcmp(directive, "entry") == 0) {
 		set_satisfied(HD_ENTRY);
 		if (IS_NOT_FLAG(expected_mask, HD_ENTRY)) {
@@ -579,6 +632,9 @@ parse_hash_directive(Context *cnt, s32 expected_mask, HashDirective *satisfied)
 		return NULL;
 	}
 
+	/**********************************************/
+	/* #build_entry - Build entry procedure flag. */
+	/**********************************************/
 	if (strcmp(directive, "build_entry") == 0) {
 		set_satisfied(HD_BUILD_ENTRY);
 		if (IS_NOT_FLAG(expected_mask, HD_BUILD_ENTRY)) {
@@ -593,6 +649,9 @@ parse_hash_directive(Context *cnt, s32 expected_mask, HashDirective *satisfied)
 		return NULL;
 	}
 
+	/***********************************/
+	/* #extern - External symbol flag. */
+	/***********************************/
 	if (strcmp(directive, "extern") == 0) {
 		set_satisfied(HD_EXTERN);
 		if (IS_NOT_FLAG(expected_mask, HD_EXTERN)) {
@@ -614,6 +673,9 @@ parse_hash_directive(Context *cnt, s32 expected_mask, HashDirective *satisfied)
 		return ext;
 	}
 
+	/**********************************************/
+	/* #compiler - Compiler internal symbol flag. */
+	/**********************************************/
 	if (strcmp(directive, "compiler") == 0) {
 		set_satisfied(HD_COMPILER);
 		if (IS_NOT_FLAG(expected_mask, HD_COMPILER)) {
@@ -628,6 +690,9 @@ parse_hash_directive(Context *cnt, s32 expected_mask, HashDirective *satisfied)
 		return NULL;
 	}
 
+	/************************************/
+	/* #inline - Inline procedure flag. */
+	/************************************/
 	if (strcmp(directive, "inline") == 0) {
 		set_satisfied(HD_INLINE);
 		if (IS_NOT_FLAG(expected_mask, HD_INLINE)) {
@@ -642,6 +707,9 @@ parse_hash_directive(Context *cnt, s32 expected_mask, HashDirective *satisfied)
 		return NULL;
 	}
 
+	/******************************************/
+	/* #no_inline - No-inline procedure flag. */
+	/******************************************/
 	if (strcmp(directive, "no_inline") == 0) {
 		set_satisfied(HD_NO_INLINE);
 		if (IS_NOT_FLAG(expected_mask, HD_NO_INLINE)) {
@@ -656,6 +724,9 @@ parse_hash_directive(Context *cnt, s32 expected_mask, HashDirective *satisfied)
 		return NULL;
 	}
 
+	/**********************************/
+	/* #private - Private file scope. */
+	/**********************************/
 	if (strcmp(directive, "private") == 0) {
 		set_satisfied(HD_PRIVATE);
 
@@ -1129,12 +1200,14 @@ parse_stmt_return(Context *cnt)
 }
 
 Ast *
-parse_stmt_if(Context *cnt)
+parse_stmt_if(Context *cnt, bool is_static)
 {
 	Token *tok_begin = tokens_consume_if(cnt->tokens, SYM_IF);
 	if (!tok_begin) return NULL;
 
-	Ast *stmt_if = ast_create_node(cnt->ast_arena, AST_STMT_IF, tok_begin, scope_get(cnt));
+	/* Runtime and static if contains same data, but produce different AST node kind. */
+	AstKind kind    = is_static ? AST_STMT_STATIC_IF : AST_STMT_IF;
+	Ast *   stmt_if = ast_create_node(cnt->ast_arena, kind, tok_begin, scope_get(cnt));
 
 	stmt_if->data.stmt_if.test = parse_expr(cnt);
 	if (!stmt_if->data.stmt_if.test) {
@@ -1150,7 +1223,8 @@ parse_stmt_if(Context *cnt)
 		tokens_consume_till(cnt->tokens, SYM_LBLOCK);
 	}
 
-	stmt_if->data.stmt_if.true_stmt = parse_block(cnt, true);
+	/* Parse body of the if statement, new scope is created when if is not static (#if) */
+	stmt_if->data.stmt_if.true_stmt = parse_block(cnt, !is_static);
 	if (!stmt_if->data.stmt_if.true_stmt) {
 		Token *tok_err = tokens_consume(cnt->tokens);
 		PARSE_ERROR(
@@ -1163,9 +1237,9 @@ parse_stmt_if(Context *cnt)
 
 	stmt_if->data.stmt_if.false_stmt = NULL;
 	if (tokens_consume_if(cnt->tokens, SYM_ELSE)) {
-		stmt_if->data.stmt_if.false_stmt = parse_stmt_if(cnt);
+		stmt_if->data.stmt_if.false_stmt = parse_stmt_if(cnt, is_static);
 		if (!stmt_if->data.stmt_if.false_stmt)
-			stmt_if->data.stmt_if.false_stmt = parse_block(cnt, true);
+			stmt_if->data.stmt_if.false_stmt = parse_block(cnt, !is_static);
 		if (!stmt_if->data.stmt_if.false_stmt) {
 			Token *tok_err = tokens_consume(cnt->tokens);
 			PARSE_ERROR(
@@ -1663,7 +1737,8 @@ parse_expr_lit_fn(Context *cnt)
 
 				BL_ASSERT(hd_extension->kind == AST_IDENT &&
 				          "Expected ident as #extern extension.");
-				BL_ASSERT(curr_decl->data.decl_entity.explicit_linkage_name == NULL);
+				BL_ASSERT(curr_decl->data.decl_entity.explicit_linkage_name ==
+				          NULL);
 				curr_decl->data.decl_entity.explicit_linkage_name = hd_extension;
 			}
 
@@ -2271,7 +2346,11 @@ NEXT:
 		goto NEXT;
 	}
 
-	parse_hash_directive(cnt, 0, NULL);
+	tmp = parse_hash_directive(cnt, HD_STATIC_IF, NULL);
+	if (tmp) {
+		tarray_push(block->data.block.nodes, tmp);
+		goto NEXT;
+	}
 
 	if ((tmp = (Ast *)parse_decl(cnt))) {
 		if (tmp->kind != AST_BAD) parse_semicolon_rq(cnt);
@@ -2287,7 +2366,7 @@ NEXT:
 		goto NEXT;
 	}
 
-	if ((tmp = parse_stmt_if(cnt))) {
+	if ((tmp = parse_stmt_if(cnt, false))) {
 		tarray_push(block->data.block.nodes, tmp);
 		goto NEXT;
 	}

@@ -290,6 +290,9 @@ static void
 print_instr_br(Context *cnt, MirInstrBr *br);
 
 static void
+print_instr_static_if(Context *cnt, MirInstrStaticIf *sif);
+
+static void
 print_instr_switch(Context *cnt, MirInstrSwitch *sw);
 
 static void
@@ -731,6 +734,12 @@ print_instr_br(Context *cnt, MirInstrBr *br)
 }
 
 void
+print_instr_static_if(Context *cnt, MirInstrStaticIf *sif) {
+	print_instr_head(cnt, &sif->base, "static_if");
+	print_comptime_value_or_id(cnt, sif->cond);
+}
+
+void
 print_instr_switch(Context *cnt, MirInstrSwitch *sw)
 {
 	print_instr_head(cnt, &sw->base, "switch");
@@ -1075,6 +1084,9 @@ print_instr(Context *cnt, MirInstr *instr)
 		break;
 	case MIR_INSTR_BR:
 		print_instr_br(cnt, (MirInstrBr *)instr);
+		break;
+	case MIR_INSTR_STATIC_IF:
+		print_instr_static_if(cnt, (MirInstrStaticIf *)instr);
 		break;
 	case MIR_INSTR_SWITCH:
 		print_instr_switch(cnt, (MirInstrSwitch *)instr);
