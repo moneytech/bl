@@ -396,6 +396,12 @@ insert_instr_addrof(Context *cnt, MirInstr *src);
 static MirInstr *
 insert_instr_toany(Context *cnt, MirInstr *expr);
 
+/*
+ * Produce move of all instructions in 'block' to location after 'after' instruction.
+ */
+static void
+unroll_block_to_location(Context *cnt, MirInstr *after, MirInstrBlock *block);
+
 static MirCastOp
 get_cast_op(MirType *from, MirType *to);
 
@@ -3089,6 +3095,38 @@ insert_instr_load(Context *cnt, MirInstr *src)
 	return &tmp->base;
 }
 
+void
+unroll_block_to_location(Context *cnt, MirInstr *after, MirInstrBlock *block)
+{
+	BL_ASSERT(after && block);
+	MirInstr *     first       = block->entry_instr;
+	MirInstr *     instr       = first;
+	MirInstr *     last        = NULL;
+	MirInstrBlock *owner_block = after->owner_block;
+	BL_ASSERT(owner_block && "Invalid owner block of move instr destination!");
+
+	while (1) {
+		BL_LOG("Unroll instr '%s'.", mir_instr_name(instr));
+
+		instr->owner_block = owner_block;
+		if (!instr->next) {
+			last = instr;
+			break;
+		}
+
+		instr = instr->next;
+	}
+
+	/* Insert whole block after 'after' instruction. */
+	MirInstr *tmp = after->next;
+	after->next   = first;
+	first->prev   = after;
+	last->next    = tmp;
+	tmp->prev     = last;
+
+	if (!owner_block->last_instr) owner_block->last_instr = last;
+}
+
 MirCastOp
 get_cast_op(MirType *from, MirType *to)
 {
@@ -4480,9 +4518,10 @@ analyze_instr_static_if(Context *cnt, MirInstrStaticIf *sif)
 		return ANALYZE_RESULT(PASSED, 0);
 	}
 
-	unref_instr(&sif->base);
+	/* unroll chosen block here. */
+	unroll_block_to_location(cnt, sif, chosen_block);
 
-	/* INCOMPLETE: unroll chosen block here. */
+	unref_instr(&sif->base);
 	return ANALYZE_RESULT(PASSED, 0);
 }
 
@@ -7762,7 +7801,7 @@ ast_stmt_static_if(Context *cnt, Ast *stmt_if)
 		ast(cnt, ast_else);
 	}
 
-	set_current_block(cnt, prev_block);	
+	set_current_block(cnt, prev_block);
 	append_instr_static_if(cnt, stmt_if, cond, then_block, else_block);
 }
 
