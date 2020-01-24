@@ -344,6 +344,11 @@ create_var(Context *cnt,
            bool     is_in_gscope,
            u32      flags);
 
+/*
+ * Create implicit variable (not defined by user code). This variable has usually
+ * some generated name starting with '.' prefix. Implicit variables are not commited into the scope,
+ * but they are analyzed as regular ones.
+ */
 static MirVar *
 create_var_impl(Context *   cnt,
                 const char *name,
@@ -661,6 +666,9 @@ ast_test_case(Context *cnt, Ast *test);
 static void
 ast_unrecheable(Context *cnt, Ast *unr);
 
+/*
+ * Generate all defer statements for block.
+ */
 static void
 ast_defer_block(Context *cnt, Ast *block, bool whole_tree);
 

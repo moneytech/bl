@@ -3,22 +3,17 @@
 #load "std/print.bl"
 
 main :: fn () s32 {
-    i :: 10;
-    #comptime if i == 10 {
-        j :: 20;
-    } else {
-        print("Static block is false!!!\n");
-    }
-
-    print("j = %\n", j);
-
-    defer print("A\n");
-    print("Static block is true!!!\n");
-
-    print("Do exit!!!\n");
+    defer print("Hello");
     return 0;
 }
 
 
 
 // Use #comptime as more generic flag for static if and fucntion calls in compile time???
+/*
+    1) Defer generation of AST to MIR
+    
+    2) Generate MIR but insert only used tmporary block of branch.
+
+    3) Generate regular if branches but ignore on of them.
+ */
