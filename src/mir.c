@@ -2905,7 +2905,7 @@ push_var(Context *cnt, MirVar *var)
 	if (var->is_global) return;
 
 	MirFn *fn = get_current_fn(cnt);
-	BL_ASSERT(fn);
+	BL_ASSERT(fn && "No current function!");
 	tarray_push(fn->variables, var);
 }
 
@@ -3104,6 +3104,8 @@ unroll_block_to_location(Context *cnt, MirInstr *after, MirInstrBlock *block)
 	MirInstr *     last        = NULL;
 	MirInstrBlock *owner_block = after->owner_block;
 	BL_ASSERT(owner_block && "Invalid owner block of move instr destination!");
+
+	if (!first) return;
 
 	while (1) {
 		BL_LOG("Unroll instr '%s'.", mir_instr_name(instr));
@@ -4515,12 +4517,13 @@ analyze_instr_static_if(Context *cnt, MirInstrStaticIf *sif)
 
 	if (!chosen_block) {
 		/* It's OK when branch block is empty. */
-		return ANALYZE_RESULT(PASSED, 0);
+		goto SKIP;
 	}
 
 	/* unroll chosen block here. */
-	unroll_block_to_location(cnt, sif, chosen_block);
+	unroll_block_to_location(cnt, &sif->base, chosen_block);
 
+SKIP:
 	unref_instr(&sif->base);
 	return ANALYZE_RESULT(PASSED, 0);
 }
@@ -8029,7 +8032,7 @@ ast_stmt_return(Context *cnt, Ast *ret)
 void
 ast_stmt_defer(Context *cnt, Ast *defer)
 {
-	/* push new defer record */
+	/* push a new defer record */
 	tsa_push_DeferStack(&cnt->ast.defer_stack, defer);
 }
 

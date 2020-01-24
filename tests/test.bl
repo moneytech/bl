@@ -4,14 +4,21 @@
 
 main :: fn () s32 {
     i :: 10;
-    #if i == 10 {
-        print("Static block is true!!!");
+    #comptime if i == 10 {
+        j :: 20;
     } else {
-        print("Static block is false!!!");
+        print("Static block is false!!!\n");
     }
 
+    print("j = %\n", j);
+
+    defer print("A\n");
+    print("Static block is true!!!\n");
+
+    print("Do exit!!!\n");
     return 0;
 }
 
 
 
+// Use #comptime as more generic flag for static if and fucntion calls in compile time???
